@@ -1,0 +1,131 @@
+** Computer simulation: motivation and applications
+
+*** Model systems and interaction potentials
+
+Within the born-oppenheimer approximation it is possible to express
+the Hamiltonian of a system as a function of the nuclear variables.
+
+Usually, the Hamiltonian will be equal to the total internal energy of the system.
+
+Solutions to this equation will generally involve calculating, from V, the force f_{i},
+torques \tau_{i} acting on the molecules.
+
+Recently, there has been a spectacular growth in the number of simulation
+studies which  avoid the use of effective potentials by considering the electrons
+explictly using DFT.
+
+The v3 term involving triplets of molecules is undoubtably signficnant at
+liquid densities. Estimates of the magnitudes of the leading, triple-dipole,
+three-body contribution has been made for inert gases in their solid-state
+face centered cubic (FCC) lattices.
+--
+
+Despite the size of three-body terms in the potential, they are only rarely
+included in computer simulations. This is because, as we shall see shortly,
+the calculation of any quantitiy involving a sum over triplets of molecules will be
+very time consuming.
+
+We turn to the simpler, more idealized, pair potentials commonly used in computer simulations.
+These reflect the salient features of real interactions in a general, often empirical way. 
+
+
+For the purposes of investigating general properties of liquids and for comparison with theory,
+highly idealized pair potentials may be of value. 
+
+
+---
+
+For ions, of course, these potentials are not sufficient to represent the long-range interactions. A simple approach to supplment
+one of these pair potentials with the coulomb charge-charge interaction
+
+
+
+** Molecular systems
+
+In principle, there is no reason to abandon the atomic approach when dealing with molecular systems: *chemical bonds are simply
+interactomic potential energy terms*. Ideally, we would like to treat all aspects of chemical bonding, including the reactions which form
+and break bonds, in a proper quantum mechanical fashion.
+
+*Bond vibrations are of very high frequency and very difficult to handle in classical simulations*. It is quite possible that a high-frequency vibration
+will not be in thermal equilibrium wih the fluid that surrounds it.
+
+
+These vibrations are also of low amplitude. For these reasons we prefer the approach of constraining the bond lengths to their
+equilibrium values. Thus, a diatomic molecule with a strongly binding interactomc potential energy surface ight be replaced
+with a dumbell with a rigid interatomic bind.
+
+
+
+The interaction between the nuclei and electronic charge clouds of a pair of molecules i and j is clearly a complicated function of relative
+positions r_{i} and r_{j} and orientatons \Omega_{i}.
+
+
+--
+
+The description of the molecular charge distribution may be improved somewhat by incorporating point multipole
+moments at the center of charge.
+
+
+A pragmatic altnerative approach, for ionic and polar systems, 
+
+
+
+
+
+----
+
+The description of the molecular charge distribution may be improved somewhat by
+incorporating point multipole moments at the centre of charge. These multipoles may be equal
+to the known (isolated molecule) values, or may be 'effective' values chosen simply to yield
+a better descrption of the liquid structure.
+
+
+* Studying Small Systems
+
+** Introduction
+
+Simulations are usually performed on a small number of molecules, 10 <= N <= 10000. The size of the system
+is limited by the avaliable storage on the host computer, and more crucially, by the speed of execution of the program.
+
+The time taken for a double loop used to evaluate the forces or potential energy is proportional to N^2.
+
+Smaller systems will always be less expensive.
+
+A major obstacle to such a simulation is the large fraction of molecules which lie on the surface of any small sample;
+for 1000 molecules arranged in a 10 x 10 x 10 cube.
+
+** Periodic boundary conditions
+
+The problem of surface effects can be overcome by implementing periodic boundary conditions. The cubic box is replicated through
+space to form an infinite lattice.
+
+When a molecule leaves the box by crossing a boundary, attention may be switched to the image just entering. It is sometimes useful to picture the basic
+simulation box.
+
+
+* Computing of T tensors
+
+For a pair of linear molecules, electrostatic energies and forces are calculated using both the angles between
+ the various vectors, and the T tensors
+
+ 
+
+ --
+
+
+* Constructing an intermolecular potential from first principles
+
+There are two approaches to constructing an intermolecular potential for use in a simulation.
+For small, simple molecules and their mixtures, it is possible to customize a model, with
+considerable freedom in choosing the functional form of the potentials and in adjusting the parameters.
+
+For larger molecules such as polymers, proteins, or DNA, either in solution or at a surface, or for multi-component
+mixtures containing many different types of molecule, then it will be more usual to employ one of the standard
+force fields.
+
+*There are essentially two stages in setting up a model for realistic simulation of a given system. The first is 'getting started'
+by constructing a first guess at a potential model.*
+
+** Building the model potential
+
+
