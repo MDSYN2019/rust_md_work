@@ -57,7 +57,8 @@ fn main() {
         };
 
     let mut new_simulation_md_clone = new_simulation_md.clone();
-    // compute the forces
+    
+    // compute the forces - forces are also required to get the acceleration
     lennard_jones_simulations::compute_forces(
         &mut new_simulation_md,
         lj_params_new.epsilon,

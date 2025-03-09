@@ -137,11 +137,18 @@ pub mod lennard_jones_simulations {
             }
         }
 
+	/*
+	The velocity algorithm is a numerical method used in molecular dynamics to integrate
+	Newton's equations of motion. It improves upon the standard Velocity algorithm by explicitly
+	updating both positions and velocities, making it more accurate for systems where
+	velocity dependent forces are dependent
+	 */
         fn update_position_verlet(&mut self, acceleration: Vector3<f64>, dt: f64) -> () {
             /*
             Verlet scheme to change the position
             Use the verlet scheme to change the velocity
             */
+	    // r = r + dt *  v + 0.5 * dt_sq * a
             self.position[0] += self.velocity[0] * dt + 0.5 * acceleration[0] * dt * dt;
             self.position[1] += self.velocity[1] * dt + 0.5 * acceleration[1] * dt * dt;
             self.position[2] += self.velocity[2] * dt + 0.5 * acceleration[2] * dt * dt;
@@ -149,17 +156,55 @@ pub mod lennard_jones_simulations {
 
         fn update_velocity_verlet(
             &mut self,
-            old_acceleration: Vector3<f64>,
-            new_acceleration: Vector3<f64>,
+            acceleration: Vector3<f64>,
             dt: f64,
         ) {
-            self.velocity[0] += 0.5 * (old_acceleration[0] + new_acceleration[0]) * dt;
-            self.velocity[1] += 0.5 * (old_acceleration[1] + new_acceleration[1]) * dt;
-            self.velocity[2] += 0.5 * (old_acceleration[2] + new_acceleration[2]) * dt;
+            self.velocity[0] += 0.5 * acceleration[0] * dt;
+            self.velocity[1] += 0.5 * acceleration[1] * dt;
+            self.velocity[2] += 0.5 * acceleration[2] * dt;
         }
-    }
 
-     pub fn site_site_energy_calculation(particles: &Vec<Particle>) -> f64 {
+	
+	//fn update_position_leapfrog(&mut self, acceleration: Vector3<f64>, dt: f64) -> ()
+	//    Another alternative is the so-called half-step 'leapfrog' scheme. The origin of
+	//    the name becomes apparent when we write the algorithm
+	//    
+	//    v(t + 0.5 dt)  = v(t-0.5dt) + dta(t)
+	//    r(t + dt) = r(t) + dtv(t + 0.5dt)
+	//
+	//    The stored quantities are the current positions r(t) and accelerations
+	//    a(t) together with the mid-step velocities v(t - 0.5dt)
+	//    
+	// */
+	//{
+	//    let mut neg_velocity: Vector3<f64>; 
+	//    let mut pos_velocity: Vector3<f64>; 
+	//
+	//    // get the mod position velocities first 
+	//    neg_velocity[0] = self.velocity[0] -  0.5 * acceleration[0] * dt;
+	//    neg_velocity[1] = self.velocity[0] -  0.5 * acceleration[0] * dt;
+	//    neg_velocity[2] = self.velocity[0] -  0.5 * acceleration[0] * dt;
+	//    
+	//    pos_velocity[0] = self.velocity[0] +  0.5 * acceleration[0] * dt;
+	//    pos_velocity[1] = self.velocity[0] +  0.5 * acceleration[0] * dt;
+	//    pos_velocity[2] = self.velocity[0] +  0.5 * acceleration[0] * dt;
+	//    
+        //    self.position[0] += self.velocity[0] * dt * 0.5 * pos_velocity[0];
+        //    self.position[1] += self.velocity[1] * dt + 0.5 * pos_velocity[1];
+        //    self.position[2] += self.velocity[2] * dt + 0.5 * pos_velocity[2];
+	//    
+	//    self.velocity[0] = 0.5 * (neg_velocity[0] + pos_velocity[0]);  
+	//    self.velocity[1] = 0.5 * (neg_velocity[1] + pos_velocity[1]);  
+	//    self.velocity[2] = 0.5 * (neg_velocity[2] + pos_velocity[2]);  	
+	//    
+	//}
+	
+    }
+    
+    // TODO - implement the Liouville operator??
+    
+    
+    pub fn site_site_energy_calculation(particles: &Vec<Particle>) -> f64 {
          /*
          The coordinates r_ia of a site a in molecule i are stored in the elements r(:, i, a)
 	 
@@ -184,13 +229,6 @@ pub mod lennard_jones_simulations {
 		 let r_vec = particles[j].position - particles[i].position;
 		 let r = r_vec.norm();
 		 let potential = lennard_jones_potential(r, computed_sigma, computed_epsilon);
-		 // Compute Lennard-Jones force
-		 //let force_mag = lennard_jones_force(r, computed_sigma, computed_epsilon);
-		 //let force_vec = r_vec * (force_mag / r);
-
-		 // Apply forces (Newton's Third Law: F_ij = -F_ji)
-		 //particles[i].force += force_vec;
-		 //particles[j].force -= force_vec;
 	     }
 	 }
 
@@ -272,29 +310,42 @@ pub mod lennard_jones_simulations {
                 "The original position and velocity is {:?} and {:?} ",
                 particle.position, particle.velocity
             );
+	    // update the positions
             particle.update_position_verlet(acceleration, dt);
             // update the velocity
-            particle.update_velocity_verlet(acceleration, acceleration, dt);
+            particle.update_velocity_verlet(acceleration, dt);
 
             println!(
-                "After a iteration step,
-The  position and velocity is {:?} and {:?} ",
+                "After a iteration step, The position and velocity is {:?} and {:?} ",
                 particle.position, particle.velocity
             );
         }
     }
 
     pub fn compute_forces(mut particles: &mut Vec<Particle>, epsilon: f64, sigma: f64) {
-
 	// TODO
+	// Reset forces before recomputing the force terms
+	// Compute Lennard-Jones force
+	//let force_mag = lennard_jones_force(r, computed_sigma, computed_epsilon);
+	//let force_vec = r_vec * (force_mag / r);
+	// Apply forces (Newton's Third Law: F_ij = -F_ji)
+	//particles[i].force += force_vec;
+	//particles[j].force -= force_vec;
+
+	for particle in particles.iter_mut() {
+	    particle.force = Vector3::zeros();
+	}
+
 	let n = particles.len(); // number of particles in the system
-	
         for i in 0..n {
             for j in (i + 1)..n {
+		let r_vec = particles[j].position - particles[i].position;
                 let r_ij = (particles[j].position - particles[i].position).norm();
-                let force = lennard_jones_potential(r_ij, epsilon, sigma);
-                //particles[i].force += force; // Apply force to particle i
-                //particles[j].force -= force; // Apply equal and opposite force to particle j
+                let force = lennard_jones_force(r_ij, epsilon, sigma); // what are the units?
+		let force_vector = (force/ r_ij) * r_vec;
+		// Applying forces to both particles (Newton's third law)
+                particles[i].force += force_vector; // Apply force to particle i
+                particles[j].force -= force_vector; // Apply equal and opposite force to particle j
             }
         }
     }
