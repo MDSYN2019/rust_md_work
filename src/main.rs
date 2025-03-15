@@ -45,6 +45,7 @@ fn main() {
 
     // Running a sample simulation - first generate the velocities and positions of the atoms
     // along with generating 3 molecules within
+
     let mut new_simulation_md =
         match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
             3, 10.0, 10.0, 10.0,
@@ -55,10 +56,11 @@ fn main() {
                 return; // Exit early or handle the error as needed
             }
         };
-
+    
     let mut new_simulation_md_clone = new_simulation_md.clone();
     
     // compute the forces - forces are also required to get the acceleration
+
     lennard_jones_simulations::compute_forces(
         &mut new_simulation_md,
         lj_params_new.epsilon,

@@ -468,7 +468,6 @@ pub mod general {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     /*
     test the self-consistent field theory part here
      */
@@ -538,6 +537,17 @@ mod tests {
             sr6: 0.0,
             sr12: 0.0,
             na: 5,
+        };
+
+	let mut new_simulation_md =
+        match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
+            3, 10.0, 10.0, 10.0,
+        ) {
+            Ok(atoms) => atoms,
+            Err(e) => {
+                eprintln!("Failed to create atoms: {}", e); // Log the error
+                return; // Exit early or handle the error as needed
+            }
         };
 
         // Test case 1 : r = sigma, expected result should be 0
