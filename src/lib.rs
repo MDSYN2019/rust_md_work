@@ -323,21 +323,16 @@ pub mod lennard_jones_simulations {
     }
 
     pub fn compute_forces(mut particles: &mut Vec<Particle>, epsilon: f64, sigma: f64) {
-	// TODO
-	// Reset forces before recomputing the force terms
-	// Compute Lennard-Jones force
-	//let force_mag = lennard_jones_force(r, computed_sigma, computed_epsilon);
-	//let force_vec = r_vec * (force_mag / r);
-	// Apply forces (Newton's Third Law: F_ij = -F_ji)
-	//particles[i].force += force_vec;
-	//particles[j].force -= force_vec;
-
+	/*
+	 Reset forces before recomputing the force terms
+	 */
 	for particle in particles.iter_mut() {
 	    particle.force = Vector3::zeros();
 	}
 
-	let n = particles.len(); // number of particles in the system
-        for i in 0..n {
+	let n = particles.len(); // Number of particles in the system
+
+	for i in 0..n {
             for j in (i + 1)..n {
 		let r_vec = particles[j].position - particles[i].position;
                 let r_ij = (particles[j].position - particles[i].position).norm();
@@ -357,9 +352,7 @@ pub mod lennard_jones_simulations {
 	To implement a thermostat for a molecular dynamics (MD) simulation in Rust, we need
 	to control the temperature of the system by adjusting the velocities of the particles
 
-        This is typically done using methods like Berendson thermostat or velocity rescaling
-
-	
+        This is typically done using methods like Berendson thermostat or velocity rescaling	
          */
         let mut total_kinetic_energy = 0.0;
         let num_particles = particles.len() as f64;
@@ -369,6 +362,29 @@ pub mod lennard_jones_simulations {
             total_kinetic_energy += 0.5 * particle.mass * velocity_sq;
         }
         // T = (2/3) * (KE / N)
+
+	/*
+	From the equipartition theorem, the average kinetic energy per particle in a
+	system of N particles is given by
+
+	<KE> = 3/2 k_b T
+
+	For a system of N particles, the total kinetic energy is:
+
+	KE = 3/2 * N * k_B * T
+
+	If we assume dimensionless temperature (often used in molecular dynamics simulations), we define:
+
+	T = T / k_B
+
+	Which simplifies the equation:
+
+	T = 2/3 * KE/N
+
+	It defines temperature in terms of kinetic energy. In Molecular Dynamics, temperature is proportional
+	to the average kinetic energy per particle
+	
+	 */
         (2.0 / 3.0) * (total_kinetic_energy / num_particles)
     }
 
@@ -452,6 +468,7 @@ pub mod general {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     /*
     test the self-consistent field theory part here
      */
@@ -499,67 +516,31 @@ mod tests {
         //assert!(result.is::<Vec<Vec<i32>>());
     }
 
-    #[test]
-    fn test_polars() {
-        let mut ex = molecular_polars::polars_read_molecular_data_file(
-            "/home/sang/Desktop/git/ProgrammingProjects/Project#01/input/benzene.dat",
-        );
-
-        let data: Vec<&str> = vec![
-            "6    0.000000000000     0.000000000000     0.000000000000",
-            "6    0.000000000000     0.000000000000     2.616448463377",
-            // Add more strings here
-        ];
-
-        //let mut newcontents =
-        //    read_lines("/home/sang/Desktop/git/ProgrammingProjects/Project#01/input/benzene.dat");
-    }
-
-    // lennard-jones double loop test
-    #[test]
-    fn test_double_loop() {
-        let mut lj_params = LennardJonesSimulations::LJParameters {
-            n: 3,
-            i: 0,
-            j: 1,
-            eps: 1.0,
-            sigma: 1.0,
-            pot: 0.0,
-            rij_sq: 0.0,
-            sr2: 0.0,
-            sr6: 0.0,
-            sr12: 0.0,
-            epslj: 0.0,
-        };
-        // call the double_loop function
-        let result = lj_params.double_loop();
-
-        // assert that the result is as expected
-        //assert_eq!(result, expected_result)
-    }
 
     #[test]
     fn test_lennard_jones() {
         let sigma = 1.0;
         let epsilon = 1.0;
-        let mut lj_params_new = LennardJonesSimulations::LJParameters {
+        let mut lj_params_new = lennard_jones_simulations::LJParameters {
+	    // simulation parameters
+	    nsteps: 5,
             n: 3,
             i: 0,
             j: 1,
-            eps: 1.0,
+	    // lennard jones parameters
+            epsilon: 1.0,
             sigma: 1.0,
-            sigma_sq: 0.0,
+            epslj: 0.0,
+	    // computed interaction values
             pot: 0.0,
             rij_sq: 0.0,
             sr2: 0.0,
             sr6: 0.0,
             sr12: 0.0,
-            epslj: 0.0,
+            na: 5,
         };
 
         // Test case 1 : r = sigma, expected result should be 0
-        let r_1 = sigma;
-        let result_1 = lj_params_new.lennard_jones(sigma, r_1, epsilon);
         //assert_eq!(result_1, 0.0);
     }
 }
