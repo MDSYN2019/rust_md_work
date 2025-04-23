@@ -34,6 +34,7 @@ pub mod tensors {
 }
 
 pub mod periodic_boundary_conditions {
+
     /*
     How do we handle periodic boundaries and minimum image convention in a simulation program?
 
@@ -41,6 +42,8 @@ pub mod periodic_boundary_conditions {
     to fix the coordiantes when the molecule has periodic boundary issues
 
      */
+    use nalgebra::{zero, Vector3};
+
     pub struct SimulationBox {
         pub x_dimension: f64,
         pub y_dimension: f64,
@@ -48,7 +51,7 @@ pub mod periodic_boundary_conditions {
     }
 
     impl SimulationBox {
-        fn cell_subdivison(&self) -> () {
+        fn cell_subdivison(&self, n_cells: i64) -> () {
             /*
             cell subdivision provides a mean for organizing the information about atom positions
             into a form that avoids most of the unnecessary work and reduces the computational effort to O(N_m) level.
@@ -56,6 +59,9 @@ pub mod periodic_boundary_conditions {
             linked lists are used to associate atoms with the cells in which they reside at any given instant. A separate list is required for each cell.
 
              */
+
+            let box_size = Vector3::new(self.x_dimension, self.y_dimension, self.z_dimension);
+            let cell_size = box_size / (n_cells as f64);
         }
     }
     pub struct MolecularCoordinates {}
