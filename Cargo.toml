@@ -12,38 +12,37 @@ edition = "2021" # year
 [dependencies]
 # async-std + rustls
 whiteread = "0.5.0"
-rand = "0.8.5"
+rand = "0.9.1"
 quote = "1.0"
 chrono = "0.4"
-sha2 = "0.9.8"
+sha2 = "0.10.8"
 serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-num = "0.4.0"
-ndarray = "0.15.0"
-itertools = "0.10.3"
+num = "0.4.3"
+ndarray = "0.16.1"
+itertools = "0.14.0"
 itertools-num= "0.1.3"
 cute = "0.3.0" # A macro for python-esque comphrensions 
-csv = "1.1"
-polars = { version = "0.27.2", features = ["lazy"] }
-pyo3 = "0.18.1" # bindings to the python interpreter 
-cargo-valgrind = "2.1.0" # checking memory with valgrind 
-ndarray-linalg = "0.16.0"
-rand_distr = "0.4.3"
-syn = "1.0.107"
-postgres = "0.19.4"
+csv = "1.3"
+polars = { version = "0.46.0", features = ["lazy"] }
+pyo3 = "0.24.2" # bindings to the python interpreter 
+cargo-valgrind = "2.3.1" # checking memory with valgrind 
+ndarray-linalg = "0.17.0"
+rand_distr = "0.5.1"
+syn = "2.0.100"
+postgres = "0.19.10"
 assert-type-eq = "0.1.0"
-async-std = "1.12.0"
-tokio = "1.25.0"
-actix = "0.13.0"
-kdam = "0.3.0"
-polars-core = "0.33.2"
-polars-io = "0.33.2"
-reqwest = { version = "0.11.22", features = ["blocking"] }
-rustix = "0.38.31"
-log = "0.4.22"
+async-std = "1.13.1"
+tokio = "1.44.2"
+actix = "0.13.5"
+kdam = "0.6.2"
+polars-core = "0.46.0"
+polars-io = "0.46.0"
+reqwest = { version = "0.12.15", features = ["blocking"] }
+rustix = "1.0.5"
+log = "0.4.27"
 nalgebra = "0.33.2"
-libc = "0.2.171"
-all = "0.0.1"
+libc = "0.2.172"
 #sqlx = "0.6.2"
 
 # When a panic occurs, the program starts unwinding, which means Rust

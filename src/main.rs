@@ -3,7 +3,7 @@
 //! ----------------------
 //!
 //! ------------------------
-//! Last Updated: 02/01/2025
+//! Last Updated: 23/04/2025
 //! ------------------------
 //!
 
@@ -25,8 +25,7 @@ use nalgebra::{zero, Vector3};
 use sang_md::lennard_jones_simulations;
 
 fn main() {
-
-    // First let's define the force field for the particles in the system 
+    // First let's define the force field for the particles in the system
     let mut lj_params_new = lennard_jones_simulations::LJParameters {
         n: 3,
         i: 0,
