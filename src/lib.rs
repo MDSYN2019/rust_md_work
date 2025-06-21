@@ -349,10 +349,7 @@ pub mod lennard_jones_simulations {
         );
     }
 
-    pub fn pbc_update(
-        particles: &mut Vec<Particle>,
-        box_length: f64,
-    ) -> Result<Vec<Particle>, String> {
+    pub fn pbc_update(particles: &mut Vec<Particle>, box_length: f64) -> Vec<Particle> {
         // Automatically correct the particle position based on
         // the periodic boundary conditions
         for i in 0..particles.len() {
@@ -361,20 +358,40 @@ pub mod lennard_jones_simulations {
             particles[i].position[2] = particles[i].position[2] % box_length;
         }
 
-        Ok(particles.clone())
+        particles.clone()
     }
 
-    pub fn run_md_nve() {
+    pub fn run_md_nve(number_of_steps: i32, dt: f64) {
         /*
         We are now equipt to implement a NVE molecular dynamics simulations.
 
         define time step and number of steps
 
          */
-        let dt = 0.01;
-        let steps = 1000;
-        let particles = create_atoms_with_set_positions_and_velocities(10, 10.0, 10.0, 10.0, 10.0);
-        // First update the positions
+
+        let lj_params_new = LJParameters {
+            epsilon: 1.0,
+            sigma: 4.0,
+            number_of_atoms: 2,
+        };
+
+        let mut new_simulation_md =
+            match create_atoms_with_set_positions_and_velocities(3, 10.0, 10.0, 10.0, 10.0) {
+                // How to handle errors - we are returning a result or a string
+                Ok(atoms) => atoms,
+                Err(e) => {
+                    eprintln!("Failed to create atoms: {}", e); // Log the error
+                    return; // Exit early or handle the error as needed
+                }
+            };
+
+        // loop over the total system for number_of_steps
+        for i in 0..number_of_steps {
+            let mut updated_sim = pbc_update(&mut new_simulation_md, 20.0);
+            compute_forces(&mut updated_sim, lj_params_new.epsilon, lj_params_new.sigma);
+            // update velocities using the verlet format
+            run_verlet_update(&mut updated_sim, Vector3::new(0.01, 0.01, 0.01), 0.05);
+        }
     }
 }
 
