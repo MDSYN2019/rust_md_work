@@ -80,22 +80,10 @@ pub mod lennard_jones_simulations {
 
     #[derive(Clone)]
     pub struct LJParameters {
-        // simulation parameters
-        pub nsteps: i64,
-        pub n: i64,
-        pub i: i64,
-        pub j: i64,
-        // lennard jones parameters
+        // lennard jones parameters and the number of atoms that we have of that parameter
         pub epsilon: f64,
         pub sigma: f64,
-        pub epslj: f64,
-        // computed interaction values
-        pub pot: f64,
-        pub rij_sq: f64,
-        pub sr2: f64,
-        pub sr6: f64,
-        pub sr12: f64,
-        pub na: i64,
+        pub number_of_atoms: i32,
     }
 
     #[derive(Clone)]
@@ -115,37 +103,41 @@ pub mod lennard_jones_simulations {
 
         fn maxwellboltzmannvelocity(&mut self, temp: f64, mass: f64, v_max: f64) -> () {
             /*
-            ---------------------
+                ---------------------
                 More information here:
-            ---------------------
+                ---------------------
                 https://scicomp.stackexchange.com/questions/19969/how-do-i-generate-maxwell-boltzmann-variates-using-a-uniform-distribution-random
 
+                A temperature bath can be achieved by periodically resetting all velocities from the Maxwell-Boltzmann distribution
+                at the desired temperature
 
-            A temperature bath can be acieved by periodically resetting all velocities from the Maxwell-Boltzmann distribution
-            at the desired temperature.
+                A function to initialize the velocities of the particles within and to try to create an initial
+                velocity pool that is consistent with the given temperature
 
-                Basically, a function to initialise the velocities of the particles within
-                and to try to create a initial velocity pool that is consisten with the given temperature
+            ---
+
+            loop over the total velocities
 
                  */
-
             let mut rng = rand::rng();
             let sigma_mb = (temp / mass).sqrt();
-            let mut velocities: Vec<usize> = Vec::with_capacity(self.lj_parameters.na as usize); // The number of atoms is taken as the capacity for the velocities for certain
+            let mut velocities: Vec<usize> =
+                Vec::with_capacity(self.lj_parameters.number_of_atoms as usize); // The number of atoms is taken as the capacity for the velocities for certain
 
-            // Compute the random velocities
-            let v_x = rng.random::<f64>() * 2.0 * v_max - v_max;
-            let v_y = rng.random::<f64>() * 2.0 * v_max - v_max;
-            let v_z = rng.random::<f64>() * 2.0 * v_max - v_max;
+            // Compute the random velocities -
+            let v_x = rng.random::<f64>() * 2.0 * v_max - v_max; // velocity x component
+            let v_y = rng.random::<f64>() * 2.0 * v_max - v_max; // velocity y component
+            let v_z = rng.random::<f64>() * 2.0 * v_max - v_max; // velocity z componeont
 
             println!("velocities are {:?} {:?} {:?}", v_x, v_y, v_z);
 
             let prob = (-0.5 * (v_x * v_x + v_y * v_y + v_z * v_z)
                 / (self.lj_parameters.sigma * self.lj_parameters.sigma))
-                .exp();
+                .exp(); // Not sure what this is doing - getting the probability distribution?
+
             let rand_val: f64 = rng.random();
 
-            // Assign the velocity accroding to the maxwell boltzmann velocity distribution
+            // Assign the velocity according to the maxwell boltzmann velocity distribution
             if rand_val < prob {
                 self.velocity[0] = rng.random::<f64>() * 2.0 * v_max - v_max;
                 self.velocity[1] = rng.random::<f64>() * 2.0 * v_max - v_max;
@@ -177,19 +169,24 @@ pub mod lennard_jones_simulations {
 
     pub fn site_site_energy_calculation(particles: &Vec<Particle>) -> f64 {
         /*
-            The coordinates r_ia of a site a in molecule i are stored in the elements r(:, i, a)
+        Computing the total Lennard-Jones energy between all distinct pairs of particles in a molecular system,
+        using site-site interactions
+
+        The coordinates r_ia of a site a in molecule i are stored in the elements r(:, i, a)
 
             For example, if we have two diatomic molecules, then we have r_1a (site a of molecule 1) and
-            r_2a (site a of molecule 2). Each molecule is a diatomic molecule (for example, O2). This means that
+            r_2a (site a of molecule 2). Each molecule is a diatomic molecule (for example, O2).
 
-
-        We already have a set of particles with the lennard jones parameters defined and stored within. Using
-        that data, we need to compute the site_site energy
+            We already have a set of particles with the lennard jones parameters defined and stored within. Using
+            that data, we need to compute the site_site energy
 
              */
         let mut total_energy = 0.0;
+
         for i in 0..particles.len() {
             for j in (i + 1)..particles.len() {
+                // double loop over all coordinates in the system
+
                 let sigma_i = particles[i].lj_parameters.sigma;
                 let epsilon_i = particles[i].lj_parameters.epsilon;
                 let sigma_j = particles[j].lj_parameters.sigma;
@@ -200,13 +197,9 @@ pub mod lennard_jones_simulations {
                 let r_vec = particles[j].position - particles[i].position;
                 let r = r_vec.norm();
                 let potential = lennard_jones_potential(r, computed_sigma, computed_epsilon);
-                // Compute Lennard-Jones force
-                //let force_mag = lennard_jones_force(r, computed_sigma, computed_epsilon);
-                //let force_vec = r_vec * (force_mag / r);
 
-                // Apply forces (Newton's Third Law: F_ij = -F_ji)
-                //particles[i].force += force_vec;
-                //particles[j].force -= force_vec;
+                // Sum the total energy with the pairwise potential in the system
+                total_energy += potential;
             }
         }
 
@@ -218,52 +211,50 @@ pub mod lennard_jones_simulations {
         temp: f64,
         mass: f64,
         v_max: f64,
+        box_dim_max: f64,
     ) -> Result<Vec<Particle>, String> {
         /*
 
-        Create number of atoms N atoms with the temperature and mass
-        with the mass possible velocity for the atoms also defined
+            Create N atoms with temperature and mass
+
+            Here, we are going with the assumption that we are creating a simulation box
+            that is cubic, meaning that we will get a (min + max) * (min + max) *  (min+max) volume
+        system for all the molecules
 
              */
-
         let mut vector_positions: Vec<Particle> = Vec::new();
         let mut rng = rand::rng();
         // Create the number of atoms in the system with the system as necessary
         for _ in 0..number_of_atoms {
+            // For each particle, we wish to create the initial posiiton,
+            // the velocity, and the LJ parameters attached to it
             let mut particle = Particle {
-                // create position for atom
+                // create position for the atom in question
                 position: Vector3::new(
                     // generate x y z position values between -10 and 10
-                    rng.random_range(-10.0..10.0),
-                    rng.random_range(-10.0..10.0),
-                    rng.random_range(-10.0..10.0),
+                    rng.random_range(-box_dim_max..box_dim_max),
+                    rng.random_range(-box_dim_max..box_dim_max),
+                    rng.random_range(-box_dim_max..box_dim_max),
                 ),
-                // create velocity for atom
+
+                // create velocity for atom in question
                 velocity: Vector3::new(
                     // generate velocity values between -1 and 1
                     rng.random_range(-1.0..1.0),
                     rng.random_range(-1.0..1.0),
                     rng.random_range(-1.0..1.0),
                 ),
-                // Create the LJ parameters for the atom
+
+                // Create the LJ parameters for the atom - default parameters are 1.0, 1.0
                 lj_parameters: (LJParameters {
-                    n: 10,
-                    i: 0,
-                    j: 1,
                     epsilon: 1.0,
                     sigma: 1.0,
-                    pot: 0.0,
-                    rij_sq: 0.0,
-                    sr2: 0.0,
-                    sr6: 0.0,
-                    sr12: 0.0,
-                    epslj: 0.0,
-                    nsteps: 1000,
-                    na: 1,
+                    number_of_atoms: 3,
                 }),
                 force: zero(), // initial force on the atom
                 mass: 0.0,     // the mass
             };
+
             // Reset the positions to the maxwell boltzmann distibution of velocities
             particle.maxwellboltzmannvelocity(temp, mass, v_max);
             // push those values into the vector
@@ -292,8 +283,7 @@ pub mod lennard_jones_simulations {
             particle.update_velocity_verlet(acceleration, acceleration, dt);
 
             println!(
-                "After a iteration step,
-The  position and velocity is {:?} and {:?} ",
+                "After a iteration step, the position and velocity is {:?} and {:?} ",
                 particle.position, particle.velocity
             );
         }
@@ -315,15 +305,19 @@ The  position and velocity is {:?} and {:?} ",
 
     pub fn compute_temperature(particles: &mut Vec<Particle>) -> f64 {
         /*
-            Compute the current temperature of the system
+        Compute the current temperature of the system
 
         To implement a thermostat for a molecular dynamics (MD) simulation in Rust, we need
         to control the temperature of the system by adjusting the velocities of the particles
 
-            This is typically done using methods like Berendson thermostat or velocity rescaling
+        This is typically done using methods like Berendson thermostat or velocity rescaling
 
+        ---
 
-             */
+        T = 2/3 * (KE/N) - this is the fundamental relation in classical statistical mechanics that connects
+        the temperature of a system with its kinetic energy per particle
+
+         */
         let mut total_kinetic_energy = 0.0;
         let num_particles = particles.len() as f64;
 
@@ -355,6 +349,21 @@ The  position and velocity is {:?} and {:?} ",
         );
     }
 
+    pub fn pbc_update(
+        particles: &mut Vec<Particle>,
+        box_length: f64,
+    ) -> Result<Vec<Particle>, String> {
+        // Automatically correct the particle position based on
+        // the periodic boundary conditions
+        for i in 0..particles.len() {
+            particles[i].position[0] = particles[i].position[0] % box_length;
+            particles[i].position[1] = particles[i].position[1] % box_length;
+            particles[i].position[2] = particles[i].position[2] % box_length;
+        }
+
+        Ok(particles.clone())
+    }
+
     pub fn run_md_nve() {
         /*
         We are now equipt to implement a NVE molecular dynamics simulations.
@@ -364,7 +373,7 @@ The  position and velocity is {:?} and {:?} ",
          */
         let dt = 0.01;
         let steps = 1000;
-        let mut particles = create_atoms_with_set_positions_and_velocities(10, 10.0, 10.0, 10.0);
+        let particles = create_atoms_with_set_positions_and_velocities(10, 10.0, 10.0, 10.0, 10.0);
         // First update the positions
     }
 }
@@ -481,17 +490,9 @@ mod tests {
     #[test]
     fn test_double_loop() {
         let mut lj_params = LennardJonesSimulations::LJParameters {
-            n: 3,
-            i: 0,
-            j: 1,
             eps: 1.0,
             sigma: 1.0,
-            pot: 0.0,
-            rij_sq: 0.0,
-            sr2: 0.0,
-            sr6: 0.0,
-            sr12: 0.0,
-            epslj: 0.0,
+            number_of_atoms: 2,
         };
         // call the double_loop function
         let result = lj_params.double_loop();
@@ -505,18 +506,9 @@ mod tests {
         let sigma = 1.0;
         let epsilon = 1.0;
         let mut lj_params_new = LennardJonesSimulations::LJParameters {
-            n: 3,
-            i: 0,
-            j: 1,
-            eps: 1.0,
+            epsilon: 1.0,
             sigma: 1.0,
-            sigma_sq: 0.0,
-            pot: 0.0,
-            rij_sq: 0.0,
-            sr2: 0.0,
-            sr6: 0.0,
-            sr12: 0.0,
-            epslj: 0.0,
+            number_of_atoms: 3,
         };
 
         // Test case 1 : r = sigma, expected result should be 0
