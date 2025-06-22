@@ -1,4 +1,6 @@
 /*
+
+
 Code based on the following paper:
 
 https://apt.scitation.org/doi/abs/10.1119/10.0002644?journalCode=ajp
@@ -8,8 +10,86 @@ Title: A first encounter with the Hartree-fock self-consistent field method
 */
 
 // Declaring the modules and importing from it
-//pub mod stat_mech;
 
+/*
+
+We have created a Particle struct with:
+
+Position (Vector3)
+Velocity (Vector3)
+Force (Vector3)
+Mass (f64)
+LJ parameters (sigma and epsilon)
+
+--
+
+We have initialized particle positions randomly in a cubic box.
+
+We have initialized velocities using the Maxwell-Boltzmann Distribution
+
+-> In classical statistical mechanics, particle velocities follow the MB distribution at equilibrium
+           -> This initialization gives the system a realistic kinetic energy corresponding to a target temperature
+
+--
+
+Temperature Calculation
+
+We have implemented the following:
+
+T = (2/3) * (KE / N)
+
+This is foundational from the equipartition theorem
+
+For an ideal classical system, each degree of freedom contributes 1/2 KbT of energy
+
+With 3 degrees of freedom per particle, that yields the formula above
+
+--
+
+Periodic Boundary Condiitons (PBC)
+
+Implemented xi <- xi mod L
+
+This simulates an infinite system by wrapping particles around the simulation box
+
+Avoids edge effects and artificial confinement
+
+--
+
+Lennard Jones potential
+
+Computed the pairwise energy using the LJ potential:
+
+V(r) = 4 * epsilon * [ (sigma/r)^12 - (sigma/r)^6 ]
+
+Applied Lorentz-Berthelot mixing rules
+
+--
+
+Velocity Rescaling Thermostat
+
+We have applied a velocity rescaling thermostat:
+
+Sigma = sqrt(T_target / T_current)
+
+Thermostats maintain constant temperature by adjusting velocities
+
+Velocity rescaling is a basic thermostat (not strictly canonical), but effective for initialization or
+coarse control
+
+
+-----
+
+**Next possible steps:**
+
+-> Force calculation from potential
+-> Center-of-mass velocity removal
+-> Minimum image convention
+-> Energy conversation check
+-> Advanced thermostats (Berenden, Langevin)
+-> Radial distribution function
+
+*/
 extern crate assert_type_eq;
 mod lj_parameters;
 
@@ -74,9 +154,9 @@ pub mod lennard_jones_simulations {
     };
     use log::{debug, error, info, trace, warn};
     use nalgebra::{zero, Vector3};
-    use ndarray::Array2;
     use rand::prelude::*;
     use rand::Rng;
+    use rand_distr::{Distribution, Normal};
 
     #[derive(Clone)]
     pub struct LJParameters {
@@ -101,48 +181,21 @@ pub mod lennard_jones_simulations {
             (self.position - other.position).norm()
         }
 
-        fn maxwellboltzmannvelocity(&mut self, temp: f64, mass: f64, v_max: f64) -> () {
-            /*
-                ---------------------
-                More information here:
-                ---------------------
-                https://scicomp.stackexchange.com/questions/19969/how-do-i-generate-maxwell-boltzmann-variates-using-a-uniform-distribution-random
+        pub fn maxwellboltzmannvelocity(&mut self, temp: f64, mass: f64, _v_max: f64) {
+            let mut rng = rand::thread_rng();
 
-                A temperature bath can be achieved by periodically resetting all velocities from the Maxwell-Boltzmann distribution
-                at the desired temperature
-
-                A function to initialize the velocities of the particles within and to try to create an initial
-                velocity pool that is consistent with the given temperature
-
-            ---
-
-            loop over the total velocities
-
-                 */
-            let mut rng = rand::rng();
+            // Standard deviation based on MB distribution
             let sigma_mb = (temp / mass).sqrt();
-            let mut velocities: Vec<usize> =
-                Vec::with_capacity(self.lj_parameters.number_of_atoms as usize); // The number of atoms is taken as the capacity for the velocities for certain
 
-            // Compute the random velocities -
-            let v_x = rng.random::<f64>() * 2.0 * v_max - v_max; // velocity x component
-            let v_y = rng.random::<f64>() * 2.0 * v_max - v_max; // velocity y component
-            let v_z = rng.random::<f64>() * 2.0 * v_max - v_max; // velocity z componeont
+            // Create a normal distribution with mean = 0, std = sigma
+            let normal = Normal::new(0.0, sigma_mb).unwrap();
 
-            println!("velocities are {:?} {:?} {:?}", v_x, v_y, v_z);
+            // Assign each velocity component independently
+            self.velocity[0] = normal.sample(&mut rng);
+            self.velocity[1] = normal.sample(&mut rng);
+            self.velocity[2] = normal.sample(&mut rng);
 
-            let prob = (-0.5 * (v_x * v_x + v_y * v_y + v_z * v_z)
-                / (self.lj_parameters.sigma * self.lj_parameters.sigma))
-                .exp(); // Not sure what this is doing - getting the probability distribution?
-
-            let rand_val: f64 = rng.random();
-
-            // Assign the velocity according to the maxwell boltzmann velocity distribution
-            if rand_val < prob {
-                self.velocity[0] = rng.random::<f64>() * 2.0 * v_max - v_max;
-                self.velocity[1] = rng.random::<f64>() * 2.0 * v_max - v_max;
-                self.velocity[2] = rng.random::<f64>() * 2.0 * v_max - v_max;
-            }
+            println!("Assigned MB velocity: {:?}", self.velocity);
         }
 
         fn update_position_verlet(&mut self, acceleration: Vector3<f64>, dt: f64) -> () {
@@ -191,6 +244,7 @@ pub mod lennard_jones_simulations {
                 let epsilon_i = particles[i].lj_parameters.epsilon;
                 let sigma_j = particles[j].lj_parameters.sigma;
                 let epsilon_j = particles[j].lj_parameters.epsilon;
+
                 // Using Lorentz-Bethelot mixing rules
                 let computed_sigma = (sigma_i + sigma_j) / 2.0;
                 let computed_epsilon = (epsilon_i + epsilon_j).sqrt();
@@ -252,7 +306,7 @@ pub mod lennard_jones_simulations {
                     number_of_atoms: 3,
                 }),
                 force: zero(), // initial force on the atom
-                mass: 0.0,     // the mass
+                mass: mass,    // the mass
             };
 
             // Reset the positions to the maxwell boltzmann distibution of velocities
@@ -349,16 +403,12 @@ pub mod lennard_jones_simulations {
         );
     }
 
-    pub fn pbc_update(particles: &mut Vec<Particle>, box_length: f64) -> Vec<Particle> {
-        // Automatically correct the particle position based on
-        // the periodic boundary conditions
-        for i in 0..particles.len() {
-            particles[i].position[0] = particles[i].position[0] % box_length;
-            particles[i].position[1] = particles[i].position[1] % box_length;
-            particles[i].position[2] = particles[i].position[2] % box_length;
+    pub fn pbc_update(particles: &mut Vec<Particle>, box_length: f64) {
+        for particle in particles.iter_mut() {
+            for i in 0..3 {
+                particle.position[i] = particle.position[i].rem_euclid(box_length);
+            }
         }
-
-        particles.clone()
     }
 
     pub fn run_md_nve(number_of_steps: i32, dt: f64) {
@@ -376,7 +426,7 @@ pub mod lennard_jones_simulations {
         };
 
         let mut new_simulation_md =
-            match create_atoms_with_set_positions_and_velocities(3, 10.0, 10.0, 10.0, 10.0) {
+            match create_atoms_with_set_positions_and_velocities(3, 300.0, 30.0, 10.0, 10.0) {
                 // How to handle errors - we are returning a result or a string
                 Ok(atoms) => atoms,
                 Err(e) => {
@@ -387,10 +437,19 @@ pub mod lennard_jones_simulations {
 
         // loop over the total system for number_of_steps
         for i in 0..number_of_steps {
-            let mut updated_sim = pbc_update(&mut new_simulation_md, 20.0);
-            compute_forces(&mut updated_sim, lj_params_new.epsilon, lj_params_new.sigma);
+            pbc_update(&mut new_simulation_md, 20.0);
+            compute_forces(
+                &mut new_simulation_md,
+                lj_params_new.epsilon,
+                lj_params_new.sigma,
+            );
+
             // update velocities using the verlet format
-            run_verlet_update(&mut updated_sim, Vector3::new(0.01, 0.01, 0.01), 0.05);
+            run_verlet_update(&mut new_simulation_md, Vector3::new(0.01, 0.01, 0.01), 0.05);
+            let mut temp = compute_temperature(&mut new_simulation_md);
+            println!("The temperature of the system is {}", temp);
+            // applying thermostat to the system
+            apply_thermostat(&mut new_simulation_md, 30.0);
         }
     }
 }
