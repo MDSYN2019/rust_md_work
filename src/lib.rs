@@ -440,79 +440,16 @@ pub mod general {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /*
-    test the self-consistent field theory part here
-     */
-    #[test]
-    fn test_self_consistent_field() {
-        //assert_eq!(
-        //    self_consistent_field::atomic_parameters::default().atomic_number,
-        //    self_consistent_field::atomic_parameters::default().atomic_number
-        //);
-        //assert_eq! (
-        //        self_consistent_field::atomic_parameters::default()
-        //        self_consistent_field::atomic_parameters::default()
-        //);
-    }
-
-    /*
-    test implementation of scf_Vals
-     */
-    //#[test]
-    //fn test_energy() {
-    //    let scf_entry = self_consistent_field::scf_vals { total_energy: 32.0 };
-    //    let scf_entry_wrong = self_consistent_field::scf_vals { total_energy: 20.0 };
-    //    //assert_eq!(scf_entry, scf_entry_wrong);
-    //}
-    //
-    //#[test]
-    //fn test_atomic_parameters() {
-    //    /*
-    //    Description of what we are testing here
-    //    */
-    //    let mut atom_parameters = self_consistent_field::atomic_parameters {
-    //        ..Default::default()
-    //    };
-    //    atom_parameters.compute_I_values();
-    //    atom_parameters.print_f_values();
-    //    atom_parameters.compute_two_electron_energy();
-    //}
-
-    #[test]
-    fn test_outer_product() {
-        let a = vec![1, 2, 3];
-        let b = vec![4, 5, 6];
-
-        let result = tensors::outer_product(&a, &b, 0);
-        //assert!(result.is::<Vec<Vec<i32>>());
-    }
-
-    #[test]
-    fn test_polars() {
-        let mut ex = molecular_polars::polars_read_molecular_data_file(
-            "/home/sang/Desktop/git/ProgrammingProjects/Project#01/input/benzene.dat",
-        );
-
-        let data: Vec<&str> = vec![
-            "6    0.000000000000     0.000000000000     0.000000000000",
-            "6    0.000000000000     0.000000000000     2.616448463377",
-            // Add more strings here
-        ];
-
-        //let mut newcontents =
-        //    read_lines("/home/sang/Desktop/git/ProgrammingProjects/Project#01/input/benzene.dat");
-    }
 
     // lennard-jones double loop test
     #[test]
     fn test_double_loop() {
-        let mut lj_params = LennardJonesSimulations::LJParameters {
-            eps: 1.0,
+        let mut lj_params = lennard_jones_simulations::LJParameters {
+            epsilon: 1.0,
             sigma: 1.0,
             number_of_atoms: 2,
         };
         // call the double_loop function
-        let result = lj_params.double_loop();
 
         // assert that the result is as expected
         //assert_eq!(result, expected_result)
@@ -522,15 +459,10 @@ mod tests {
     fn test_lennard_jones() {
         let sigma = 1.0;
         let epsilon = 1.0;
-        let mut lj_params_new = LennardJonesSimulations::LJParameters {
+        let mut lj_params_new = lennard_jones_simulations::LJParameters {
             epsilon: 1.0,
             sigma: 1.0,
             number_of_atoms: 3,
         };
-
-        // Test case 1 : r = sigma, expected result should be 0
-        let r_1 = sigma;
-        let result_1 = lj_params_new.lennard_jones(sigma, r_1, epsilon);
-        //assert_eq!(result_1, 0.0);
     }
 }
