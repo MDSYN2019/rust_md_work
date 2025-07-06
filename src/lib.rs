@@ -59,7 +59,7 @@ Avoids edge effects and artificial confinement
 Lennard Jones potential
 
 Computed the pairwise energy using the LJ potential:
-
+p
 V(r) = 4 * epsilon * [ (sigma/r)^12 - (sigma/r)^6 ]
 
 Applied Lorentz-Berthelot mixing rules
@@ -85,9 +85,12 @@ coarse control
 -> Force calculation from potential
 -> Center-of-mass velocity removal
 -> Minimum image convention
--> Energy conversation check
--> Advanced thermostats (Berenden, Langevin)
--> Radial distribution function
+
+--
+
+-> Energy conversation check -> will do
+-> Advanced thermostats (Berenden, Langevin) -> will do
+-> Radial distribution function -> will do
 
 */
 extern crate assert_type_eq;
@@ -133,12 +136,14 @@ pub mod periodic_boundary_conditions {
     impl SimulationBox {
         fn cell_subdivison(&self, n_cells: i64) -> () {
             /*
-            cell subdivision provides a mean for organizing the information about atom positions
-            into a form that avoids most of the unnecessary work and reduces the computational effort to O(N_m) level.
+                cell subdivision provides a mean for organizing the information about atom positions
+                into a form that avoids most of the unnecessary work and reduces the computational effort to O(N_m) level.
 
-            linked lists are used to associate atoms with the cells in which they reside at any given instant. A separate list is required for each cell.
+                linked lists are used to associate atoms with the cells in which they reside at any given instant.
 
-             */
+            A separate list is required for each cell.
+
+                 */
 
             let box_size = Vector3::new(self.x_dimension, self.y_dimension, self.z_dimension);
             let cell_size = box_size / (n_cells as f64);
@@ -402,6 +407,8 @@ pub mod lennard_jones_simulations {
             current_temperature, target_temperature, lambda
         );
     }
+
+    pub fn apply_thermostat_berendsen(particles: &mut Vec<Particle>, target_temperature: f64) {}
 
     pub fn pbc_update(particles: &mut Vec<Particle>, box_length: f64) {
         for particle in particles.iter_mut() {

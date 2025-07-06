@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Rust",
+      "type": "lldb",                        // use CodeLLDB
+      "request": "launch",
+      "program": "${workspaceFolder}/target/debug/${workspaceFolderBasename}",
+      "args": [],                             // any CLI args here
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "cargo build",        // make sure your binary is built
+      "sourceLanguages": ["rust"]
+    }
+  ]
+}
