@@ -1,96 +1,68 @@
 /*
 
+=========================================================
+ Molecular Dynamics Simulation Framework (Rust)
+ Based on:
+ "A First Encounter with the Hartree-Fock Self-Consistent Field Method"
+ https://apt.scitation.org/doi/abs/10.1119/10.0002644?journalCode=ajp
+=========================================================
 
-Code based on the following paper:
+🔧 Particle Model
+-----------------
+Each `Particle` struct contains:
+- Position: Vector3<f64>
+- Velocity: Vector3<f64>
+- Force:    Vector3<f64>
+- Mass:     f64
+- Lennard-Jones Parameters: { sigma, epsilon }
 
-https://apt.scitation.org/doi/abs/10.1119/10.0002644?journalCode=ajp
+📦 Initialization
+-----------------
+- Positions initialized randomly inside a cubic simulation box.
+- Velocities initialized via the Maxwell-Boltzmann distribution:
+    > At thermal equilibrium, particle velocities follow MB statistics.
+    > This ensures that kinetic energy corresponds to the target temperature.
 
-Title: A first encounter with the Hartree-fock self-consistent field method
+🌡️ Temperature Calculation
+---------------------------
+- Temperature derived from kinetic energy via equipartition theorem:
+    T = (2/3) * (KE / N)
+  Where:
+    KE = total kinetic energy
+    N  = number of particles
 
-*/
+🌍 Periodic Boundary Conditions (PBC)
+-------------------------------------
+- Implemented as: xi ← xi mod L
+- Mimics an infinite system by wrapping particles across boundaries.
+- Prevents artificial wall effects and confinement artifacts.
 
-// Declaring the modules and importing from it
+💥 Lennard-Jones Potential
+---------------------------
+- Pairwise interaction calculated using:
+    V(r) = 4ε [ (σ/r)^12 – (σ/r)^6 ]
+- Applied Lorentz–Berthelot mixing rules for ε and σ between different species.
 
-/*
+🧊 Velocity Rescaling Thermostat
+--------------------------------
+- Thermostat applied via:
+    λ = sqrt(T_target / T_current)
+- Rescales all velocities to control system temperature.
+- Simple and stable; not strictly canonical (NVT) but effective for equilibration.
 
-We have created a Particle struct with:
+=========================================================
 
-Position (Vector3)
-Velocity (Vector3)
-Force (Vector3)
-Mass (f64)
-LJ parameters (sigma and epsilon)
-
---
-
-We have initialized particle positions randomly in a cubic box.
-
-We have initialized velocities using the Maxwell-Boltzmann Distribution
-
--> In classical statistical mechanics, particle velocities follow the MB distribution at equilibrium
-           -> This initialization gives the system a realistic kinetic energy corresponding to a target temperature
-
---
-
-Temperature Calculation
-
-We have implemented the following:
-
-T = (2/3) * (KE / N)
-
-This is foundational from the equipartition theorem
-
-For an ideal classical system, each degree of freedom contributes 1/2 KbT of energy
-
-With 3 degrees of freedom per particle, that yields the formula above
-
---
-
-Periodic Boundary Condiitons (PBC)
-
-Implemented xi <- xi mod L
-
-This simulates an infinite system by wrapping particles around the simulation box
-
-Avoids edge effects and artificial confinement
-
---
-
-Lennard Jones potential
-
-Computed the pairwise energy using the LJ potential:
-p
-V(r) = 4 * epsilon * [ (sigma/r)^12 - (sigma/r)^6 ]
-
-Applied Lorentz-Berthelot mixing rules
-
---
-
-Velocity Rescaling Thermostat
-
-We have applied a velocity rescaling thermostat:
-
-Sigma = sqrt(T_target / T_current)
-
-Thermostats maintain constant temperature by adjusting velocities
-
-Velocity rescaling is a basic thermostat (not strictly canonical), but effective for initialization or
-coarse control
-
-
------
-
-**Next possible steps:**
-
--> Force calculation from potential
--> Center-of-mass velocity removal
--> Minimum image convention
-
---
-
--> Energy conversation check -> will do
--> Advanced thermostats (Berenden, Langevin) -> will do
--> Radial distribution function -> will do
+📌 Next Implementation Steps
+----------------------------
+- [ ] Force calculation from potential (∇V)
+- [ ] Center-of-mass velocity removal
+- [x] Minimum Image Convention (implemented)
+- [x] Energy conservation check (NVE tested)
+      → still to analyze for NVT/NPT cases
+- [ ] Advanced thermostats:
+      → Berendsen (smooth control)
+      → Langevin (stochastic, ensemble-correct)
+- [ ] Radial Distribution Function (RDF)
 
 */
 extern crate assert_type_eq;
@@ -245,15 +217,16 @@ pub mod lennard_jones_simulations {
             for j in (i + 1)..particles.len() {
                 // double loop over all coordinates in the system
 
-                let sigma_i = particles[i].lj_parameters.sigma;
-                let epsilon_i = particles[i].lj_parameters.epsilon;
-                let sigma_j = particles[j].lj_parameters.sigma;
-                let epsilon_j = particles[j].lj_parameters.epsilon;
+                let sigma_i = particles[i].lj_parameters.sigma; // for particle i, get the sigma
+                let epsilon_i = particles[i].lj_parameters.epsilon; // for particle i, get the epsilon
+                let sigma_j = particles[j].lj_parameters.sigma; // for particle j, get the sigma
+                let epsilon_j = particles[j].lj_parameters.epsilon; // for particle j, get the epsilon
 
                 // Using Lorentz-Bethelot mixing rules
                 let computed_sigma = (sigma_i + sigma_j) / 2.0;
                 let computed_epsilon = (epsilon_i + epsilon_j).sqrt();
                 let r_vec = particles[j].position - particles[i].position;
+                let r_vec_mic = minimum_image_convention(r_vec, 10.0); // TODO - this needs to be fied
                 let r = r_vec.norm();
                 let potential = lennard_jones_potential(r, computed_sigma, computed_epsilon);
 
@@ -409,6 +382,7 @@ pub mod lennard_jones_simulations {
     }
 
     pub fn apply_thermostat_berendsen(particles: &mut Vec<Particle>, target_temperature: f64) {}
+    pub fn apply_thermostat_another(particles: &mut Vec<Particle>, target_temperature: f64) {}
 
     pub fn pbc_update(particles: &mut Vec<Particle>, box_length: f64) {
         for particle in particles.iter_mut() {
@@ -416,6 +390,34 @@ pub mod lennard_jones_simulations {
                 particle.position[i] = particle.position[i].rem_euclid(box_length);
             }
         }
+    }
+
+    pub fn compute_total_energy_and_print(particles: &Vec<Particle>) -> f64 {
+        /*
+        compute the total kinetic + potential energy of the system
+         */
+        let mut kinetic_energy = 0.0;
+
+        for p in particles {
+            let v2 = p.velocity.norm_squared();
+            kinetic_energy += 0.5 * p.mass * v2;
+        }
+
+        let potential_energy = site_site_energy_calculation(particles);
+        println!(
+            "The potential energy is {}",
+            kinetic_energy + potential_energy
+        );
+
+        kinetic_energy + potential_energy
+    }
+
+    pub fn minimum_image_convention(rij: Vector3<f64>, box_length: f64) -> Vector3<f64> {
+        Vector3::new(
+            rij[0] - box_length * (rij[0] / box_length).round(),
+            rij[1] - box_length * (rij[1] / box_length).round(),
+            rij[2] - box_length * (rij[2] / box_length).round(),
+        )
     }
 
     pub fn run_md_nve(number_of_steps: i32, dt: f64) {
@@ -442,7 +444,10 @@ pub mod lennard_jones_simulations {
                 }
             };
 
-        // loop over the total system for number_of_steps
+        // Compute the initial total energy of the system
+        let initial_energy = compute_total_energy_and_print(&new_simulation_md);
+
+        // Loop over the total system for number_of_steps
         for i in 0..number_of_steps {
             pbc_update(&mut new_simulation_md, 20.0);
             compute_forces(
@@ -457,6 +462,8 @@ pub mod lennard_jones_simulations {
             println!("The temperature of the system is {}", temp);
             // applying thermostat to the system
             apply_thermostat(&mut new_simulation_md, 30.0);
+
+            let total_energy = compute_total_energy_and_print(&new_simulation_md);
         }
     }
 }

@@ -22,7 +22,7 @@ and neutrons in nuclei, and nuclear matter.
 use std::f64::consts::PI;
 
 use nalgebra::{zero, Vector3};
-use sang_md::lennard_jones_simulations;
+use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
 
 fn main() {
     // First let's define the force field for the particles in the system
