@@ -29,6 +29,10 @@ pub struct Angle {
     pub k: f64,
 }
 
+pub fn bond_distance(a1: &Atom, a2: &Atom) -> f64 {
+    (a1.position - a2.position).norm()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,5 +50,27 @@ mod tests {
             charge: -3.0,
         };
         assert_eq!(test_atom.id, 1);
+    }
+
+    #[test]
+    fn test_bond_distance_happy() {
+        let atom1 = Atom {
+            id: 0,
+            position: Vector3::new(0.0, 0.0, 0.0),
+            velocity: Vector3::zeros(),
+            force: Vector3::zeros(),
+            atom_type: 1,
+            mass: 1.0,
+            charge: 0.0,
+        };
+
+        let atom2 = Atom {
+            id: 1,
+            position: Vector3::new(3.0, 0.0, 0.0),
+            ..atom1.clone()
+        };
+
+        let dist = bond_distance(&atom1, &atom2);
+        assert!((dist - 3.0).abs() < 1e-6) // happy path
     }
 }
