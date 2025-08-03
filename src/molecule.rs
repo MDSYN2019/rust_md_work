@@ -3,6 +3,7 @@ Expanding your rust based molecular dynamics (MD) simulation from point particle
 to molecules with bonded interactions and force fields requires adding adding new types of interactions
 */
 use nalgebra::Vector3;
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct Atom {
@@ -29,9 +30,19 @@ pub struct Angle {
     pub k: f64,
 }
 
+pub struct ForceField {
+    pub atom_types: HashMap<String, AtomTypeParams>,
+    pub bond_types: Vec<Bond>,
+    pub angle_types: Vec<Angle>,
+}
+
 pub fn bond_distance(a1: &Atom, a2: &Atom) -> f64 {
     (a1.position - a2.position).norm()
 }
+
+//pub compute_bond_force(atoms: %mut [Atom], bond: &Bond) {
+//
+//}
 
 #[cfg(test)]
 mod tests {
