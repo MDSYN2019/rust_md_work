@@ -67,7 +67,8 @@ Each `Particle` struct contains:
 */
 extern crate assert_type_eq;
 mod lj_parameters;
-// Use when importing the finished minimization module
+mod molecule;
+// Use when importing the finished minimization modulexo
 //use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
 
 pub mod tensors {
@@ -99,7 +100,7 @@ pub mod periodic_boundary_conditions {
     to fix the coordiantes when the molecule has periodic boundary issues
 
      */
-    use nalgebra::{zero, Vector3};
+    use nalgebra::Vector3;
 
     pub struct SimulationBox {
         pub x_dimension: f64,
@@ -128,10 +129,8 @@ pub mod periodic_boundary_conditions {
 
 pub mod lennard_jones_simulations {
 
-    use crate::lj_parameters::{
-        hard_sphere_potential, lennard_jones_force, lennard_jones_potential,
-    };
-    use log::{debug, error, info, trace, warn};
+    use crate::lj_parameters::lennard_jones_potential;
+    
     use nalgebra::{zero, Vector3};
     use rand::prelude::*;
     use rand::Rng;
@@ -323,7 +322,7 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    pub fn compute_forces(mut particles: &mut Vec<Particle>, epsilon: f64, sigma: f64) {
+    pub fn compute_forces(particles: &mut Vec<Particle>, epsilon: f64, sigma: f64) {
         // TODO
         let n = particles.len(); // number of particles in the system
 
@@ -460,7 +459,7 @@ pub mod lennard_jones_simulations {
 
             // update velocities using the verlet format
             run_verlet_update(&mut new_simulation_md, Vector3::new(0.01, 0.01, 0.01), 0.05);
-            let mut temp = compute_temperature(&mut new_simulation_md);
+            let temp = compute_temperature(&mut new_simulation_md);
             println!("The temperature of the system is {}", temp);
             // applying thermostat to the system
             apply_thermostat(&mut new_simulation_md, 30.0);
@@ -519,7 +518,7 @@ mod tests {
     // lennard-jones double loop test
     #[test]
     fn test_double_loop() {
-        let mut lj_params = lennard_jones_simulations::LJParameters {
+        let lj_params = lennard_jones_simulations::LJParameters {
             epsilon: 1.0,
             sigma: 1.0,
             number_of_atoms: 2,
@@ -534,7 +533,7 @@ mod tests {
     fn test_lennard_jones() {
         let sigma = 1.0;
         let epsilon = 1.0;
-        let mut lj_params_new = lennard_jones_simulations::LJParameters {
+        let lj_params_new = lennard_jones_simulations::LJParameters {
             epsilon: 1.0,
             sigma: 1.0,
             number_of_atoms: 3,

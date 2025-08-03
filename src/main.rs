@@ -19,10 +19,8 @@ and neutrons in nuclei, and nuclear matter.
 
 #![allow(unused_variables)] // ensure that unused variables do not cause an error when compiling this program
                             // relax compiler warnings while working through ideas
-use std::f64::consts::PI;
 
-use nalgebra::{zero, Vector3};
-use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
+use sang_md::lennard_jones_simulations::{self};
 
 fn main() {
     // First let's define the force field for the particles in the system
