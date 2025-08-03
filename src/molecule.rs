@@ -31,7 +31,7 @@ pub struct Angle {
 }
 
 pub struct ForceField {
-    pub atom_types: HashMap<String, AtomTypeParams>,
+    //pub atom_types: HashMap<String, AtomTypeParams>,
     pub bond_types: Vec<Bond>,
     pub angle_types: Vec<Angle>,
 }

@@ -1,0 +1,13 @@
+/home/sang/Desktop/Sandbox/rust_md_work/target/debug/deps/liblog-949a47a3c1184a0c.rmeta: /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/lib.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/macros.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/serde.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/mod.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/error.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/key.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/source.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/value.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/__private_api.rs
+
+/home/sang/Desktop/Sandbox/rust_md_work/target/debug/deps/log-949a47a3c1184a0c.d: /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/lib.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/macros.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/serde.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/mod.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/error.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/key.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/source.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/value.rs /home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/__private_api.rs
+
+/home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/lib.rs:
+/home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/macros.rs:
+/home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/serde.rs:
+/home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/mod.rs:
+/home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/error.rs:
+/home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/key.rs:
+/home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/source.rs:
+/home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/kv/value.rs:
+/home/sang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.27/src/__private_api.rs:
