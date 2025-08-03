@@ -43,6 +43,7 @@ rustix = "1.0.5"
 log = "0.4.27"
 nalgebra = "0.33.2"
 libc = "0.2.172"
+argmin = "0.10.0"
 #sqlx = "0.6.2"
 
 # When a panic occurs, the program starts unwinding, which means Rust

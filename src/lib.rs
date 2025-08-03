@@ -67,6 +67,8 @@ Each `Particle` struct contains:
 */
 extern crate assert_type_eq;
 mod lj_parameters;
+// Use when importing the finished minimization module
+//use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
 
 pub mod tensors {
     pub fn outer_product<T>(a: &[T], b: &[T], default_value: T) -> Vec<Vec<T>>
