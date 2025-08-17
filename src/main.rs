@@ -3,7 +3,7 @@
 //! ----------------------
 //!
 //! ------------------------
-//! Last Updated: 21/06/2025
+//! Last Updated: 16/08/2025
 //! ------------------------
 //!
 
@@ -19,10 +19,8 @@ and neutrons in nuclei, and nuclear matter.
 
 #![allow(unused_variables)] // ensure that unused variables do not cause an error when compiling this program
                             // relax compiler warnings while working through ideas
-use std::f64::consts::PI;
 
-use nalgebra::{zero, Vector3};
-use sang_md::lennard_jones_simulations;
+use sang_md::lennard_jones_simulations::{self};
 
 fn main() {
     // First let's define the force field for the particles in the system
@@ -66,5 +64,5 @@ fn main() {
     //
     //// apply the thermostat for the system
     //lennard_jones_simulations::apply_thermostat(&mut new_simulation_md_clone, 30.0);
-    lennard_jones_simulations::run_md_nve(30, 0.5);
+    lennard_jones_simulations::run_md_nve(30, 0.5, 10.0);
 }
