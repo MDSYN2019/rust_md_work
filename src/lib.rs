@@ -68,6 +68,7 @@ Each `Particle` struct contains:
 extern crate assert_type_eq;
 mod lj_parameters;
 mod molecule;
+
 // Use when importing the finished minimization modulexo
 //use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
 
@@ -127,10 +128,24 @@ pub mod periodic_boundary_conditions {
     pub struct MolecularCoordinates {}
 }
 
+#[inline]
+pub fn lennard_jones_force_scalar(r: f64, sigma: f64, epsilon: f64) -> f64 {
+    // F(r) magnitude along r-hat; positive = repulsive
+    // d/dr 4ε[(σ/r)^12 - (σ/r)^6]  =>  24ε [2(σ^12/r^13) - (σ^6/r^7)]
+    if r <= 0.0 {
+        return 0.0;
+    }
+    let sr = sigma / r;
+    let sr2 = sr * sr;
+    let sr6 = sr2 * sr2 * sr2;
+    let sr12 = sr6 * sr6;
+    24.0 * epsilon * (2.0 * sr12 - sr6) / r
+}
+
 pub mod lennard_jones_simulations {
 
+    use super::*;
     use crate::lj_parameters::lennard_jones_potential;
-    
     use nalgebra::{zero, Vector3};
     use rand::prelude::*;
     use rand::Rng;
@@ -176,29 +191,27 @@ pub mod lennard_jones_simulations {
             println!("Assigned MB velocity: {:?}", self.velocity);
         }
 
-        fn update_position_verlet(&mut self, acceleration: Vector3<f64>, dt: f64) -> () {
+        fn update_position_verlet(&mut self, dt: f64) -> () {
             /*
             Verlet scheme to change the position
             Use the verlet scheme to change the velocity
             */
-            self.position[0] += self.velocity[0] * dt + 0.5 * acceleration[0] * dt * dt;
-            self.position[1] += self.velocity[1] * dt + 0.5 * acceleration[1] * dt * dt;
-            self.position[2] += self.velocity[2] * dt + 0.5 * acceleration[2] * dt * dt;
+            let a = self.force / self.mass;
+            self.position += self.velocity * dt + 0.5 * a * dt * dt;
+            //self.position[0] += self.velocity[0] * dt + 0.5 * acceleration[0] * dt * dt;
+            //self.position[1] += self.velocity[1] * dt + 0.5 * acceleration[1] * dt * dt;
+            //self.position[2] += self.velocity[2] * dt + 0.5 * acceleration[2] * dt * dt;
         }
 
-        fn update_velocity_verlet(
-            &mut self,
-            old_acceleration: Vector3<f64>,
-            new_acceleration: Vector3<f64>,
-            dt: f64,
-        ) {
-            self.velocity[0] += 0.5 * (old_acceleration[0] + new_acceleration[0]) * dt;
-            self.velocity[1] += 0.5 * (old_acceleration[1] + new_acceleration[1]) * dt;
-            self.velocity[2] += 0.5 * (old_acceleration[2] + new_acceleration[2]) * dt;
+        fn update_velocity_verlet(&mut self, a_new: Vector3<f64>, dt: f64) {
+            //self.velocity[0] += 0.5 * (old_acceleration[0] + new_acceleration[0]) * dt;
+            //self.velocity[1] += 0.5 * (old_acceleration[1] + new_acceleration[1]) * dt;
+            //self.velocity[2] += 0.5 * (old_acceleration[2] + new_acceleration[2]) * dt;
+            self.velocity += 0.5 * a_new * dt;
         }
     }
 
-    pub fn site_site_energy_calculation(particles: &Vec<Particle>) -> f64 {
+    pub fn site_site_energy_calculation(particles: &Vec<Particle>, box_length: f64) -> f64 {
         /*
         Computing the total Lennard-Jones energy between all distinct pairs of particles in a molecular system,
         using site-site interactions
@@ -227,8 +240,8 @@ pub mod lennard_jones_simulations {
                 let computed_sigma = (sigma_i + sigma_j) / 2.0;
                 let computed_epsilon = (epsilon_i + epsilon_j).sqrt();
                 let r_vec = particles[j].position - particles[i].position;
-                let r_vec_mic = minimum_image_convention(r_vec, 10.0); // TODO - this needs to be fied
-                let r = r_vec.norm();
+                let r_vec_mic = minimum_image_convention(r_vec, box_length); // TODO - this needs to be fied
+                let r = r_vec_mic.norm();
                 let potential = lennard_jones_potential(r, computed_sigma, computed_epsilon);
 
                 // Sum the total energy with the pairwise potential in the system
@@ -296,24 +309,23 @@ pub mod lennard_jones_simulations {
         Ok(vector_positions)
     }
 
-    pub fn run_verlet_update(
-        particles: &mut Vec<Particle>,
-        acceleration: Vector3<f64>,
-        dt: f64,
-    ) -> () {
+    pub fn run_verlet_update_nve(particles: &mut Vec<Particle>, dt: f64, box_length: f64) -> () {
         /*
         Update the position and velocity of the particle using the verlet scheme
          */
+        for particle in particles.iter_mut() {
+            particle.update_position_verlet(dt);
+        }
+        pbc_update(particles, box_length);
+        compute_forces(particles, box_length);
 
-        // update the position
         for particle in particles.iter_mut() {
             println!(
                 "The original position and velocity is {:?} and {:?} ",
                 particle.position, particle.velocity
             );
-            particle.update_position_verlet(acceleration, dt);
-            // update the velocity
-            particle.update_velocity_verlet(acceleration, acceleration, dt);
+            let a_new = particle.force / particle.mass;
+            particle.update_velocity_verlet(a_new, dt);
 
             println!(
                 "After a iteration step, the position and velocity is {:?} and {:?} ",
@@ -322,16 +334,40 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    pub fn compute_forces(particles: &mut Vec<Particle>, epsilon: f64, sigma: f64) {
+    pub fn compute_forces(particles: &mut Vec<Particle>, box_length: f64) {
         // TODO
-        let n = particles.len(); // number of particles in the system
+        for p in particles.iter_mut() {
+            p.force = Vector3::zeros();
+        }
 
+        let n = particles.len(); // number of particles in the system
+                                 // initalize zero forces for each particle
         for i in 0..n {
             for j in (i + 1)..n {
-                let r_ij = (particles[j].position - particles[i].position).norm();
-                let force = lennard_jones_potential(r_ij, epsilon, sigma);
-                //particles[i].force += force; // Apply force to particle i
-                //particles[j].force -= force; // Apply equal and opposite force to particle j
+                let r_vec = particles[j].position - particles[i].position;
+                let r_mic = minimum_image_convention(r_vec, box_length);
+                let r = r_mic.norm();
+                if r == 0.0 {
+                    continue;
+                }
+
+                // mix params (Lorentz-Berthelot)
+                let si = particles[i].lj_parameters.sigma;
+                let ei = particles[i].lj_parameters.epsilon;
+                let sj = particles[j].lj_parameters.sigma;
+                let ej = particles[j].lj_parameters.epsilon;
+                let sigma = 0.5 * (si + sj);
+                let epsilon = (ei * ej).sqrt();
+                let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+                let f_vec = (r_mic / r) * f_mag; // along r-hat
+
+                // action = -reaction
+                particles[i].force -= f_vec;
+                particles[j].force += f_vec;
+                println!(
+                    "The forces are {:?} {:?}",
+                    particles[i].force, particles[j].force
+                );
             }
         }
     }
@@ -393,7 +429,7 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    pub fn compute_total_energy_and_print(particles: &Vec<Particle>) -> f64 {
+    pub fn compute_total_energy_and_print(particles: &Vec<Particle>, box_length: f64) -> f64 {
         /*
         compute the total kinetic + potential energy of the system
          */
@@ -404,7 +440,7 @@ pub mod lennard_jones_simulations {
             kinetic_energy += 0.5 * p.mass * v2;
         }
 
-        let potential_energy = site_site_energy_calculation(particles);
+        let potential_energy = site_site_energy_calculation(particles, box_length);
         println!(
             "The potential energy is {}",
             kinetic_energy + potential_energy
@@ -421,12 +457,10 @@ pub mod lennard_jones_simulations {
         )
     }
 
-    pub fn run_md_nve(number_of_steps: i32, dt: f64) {
+    pub fn run_md_nve(number_of_steps: i32, dt: f64, box_length: f64) {
         /*
         We are now equipt to implement a NVE molecular dynamics simulations.
-
         define time step and number of steps
-
          */
 
         let lj_params_new = LJParameters {
@@ -446,25 +480,17 @@ pub mod lennard_jones_simulations {
             };
 
         // Compute the initial total energy of the system
-        let initial_energy = compute_total_energy_and_print(&new_simulation_md);
-
+        let initial_energy = compute_total_energy_and_print(&new_simulation_md, box_length);
         // Loop over the total system for number_of_steps
         for i in 0..number_of_steps {
-            pbc_update(&mut new_simulation_md, 20.0);
-            compute_forces(
-                &mut new_simulation_md,
-                lj_params_new.epsilon,
-                lj_params_new.sigma,
-            );
-
+            pbc_update(&mut new_simulation_md, box_length);
             // update velocities using the verlet format
-            run_verlet_update(&mut new_simulation_md, Vector3::new(0.01, 0.01, 0.01), 0.05);
+            run_verlet_update_nve(&mut new_simulation_md, 0.05, box_length);
             let temp = compute_temperature(&mut new_simulation_md);
             println!("The temperature of the system is {}", temp);
-            // applying thermostat to the system
             apply_thermostat(&mut new_simulation_md, 30.0);
 
-            let total_energy = compute_total_energy_and_print(&new_simulation_md);
+            let total_energy = compute_total_energy_and_print(&new_simulation_md, box_length);
         }
     }
 }

@@ -1,9 +1,19 @@
 /*
+
 Expanding your rust based molecular dynamics (MD) simulation from point particles
-to molecules with bonded interactions and force fields requires adding adding new types of interactions
-*/
+to molecules with bonded interactions and force fields requires adding new types
+of interactions
+ */
 use nalgebra::Vector3;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+#[derive(Clone)]
+pub struct SimpleBond {
+    pub i: usize,
+    pub j: usize,
+    pub k: f64,
+    pub r0: f64,
+}
 
 #[derive(Clone)]
 pub struct Atom {
@@ -40,9 +50,33 @@ pub fn bond_distance(a1: &Atom, a2: &Atom) -> f64 {
     (a1.position - a2.position).norm()
 }
 
+fn build_12_exclusions() {}
+
 //pub compute_bond_force(atoms: %mut [Atom], bond: &Bond) {
 //
 //}
+
+pub fn apply_bonded_forces_and_energy(
+    particles: &mut [Particle],
+    bonds: &[SimpleBond],
+    box_length: f64,
+) {
+    let (i, j) = (b.i, b.j);
+    let r_ij = particles[j].position - particles[i].position; // compute the difference between the positions 
+    let r_vec = r_ij;
+    let = r_vec.norm();
+
+    if r == 0.0 {continue;}
+
+    let dr = r - b.r0; // difference between the current length and the equilibrium bond length
+    e_bond += 0.5 * b.k * dr * dr;
+   
+    let f_mag = -b.k * dr;
+    let f_vec = (r_vec / r) * f_mag;
+
+    particles[i].force  += f_vec;
+    particles[j].force += f_vec;
+}
 
 #[cfg(test)]
 mod tests {

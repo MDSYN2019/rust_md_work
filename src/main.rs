@@ -3,7 +3,7 @@
 //! ----------------------
 //!
 //! ------------------------
-//! Last Updated: 21/06/2025
+//! Last Updated: 16/08/2025
 //! ------------------------
 //!
 
@@ -64,5 +64,5 @@ fn main() {
     //
     //// apply the thermostat for the system
     //lennard_jones_simulations::apply_thermostat(&mut new_simulation_md_clone, 30.0);
-    lennard_jones_simulations::run_md_nve(30, 0.5);
+    lennard_jones_simulations::run_md_nve(30, 0.5, 10.0);
 }
