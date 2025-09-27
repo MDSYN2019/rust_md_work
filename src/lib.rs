@@ -372,34 +372,52 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    pub fn compute_temperature(particles: &mut Vec<Particle>) -> f64 {
+    pub fn compute_temperature(particles: &mut Vec<Particle>, dof: usize) -> f64 {
         /*
-        Compute the current temperature of the system
+            Compute the current temperature of the system
 
-        To implement a thermostat for a molecular dynamics (MD) simulation in Rust, we need
-        to control the temperature of the system by adjusting the velocities of the particles
+            To implement a thermostat for a molecular dynamics (MD) simulation in Rust, we need
+            to control the temperature of the system by adjusting the velocities of the particles
 
-        This is typically done using methods like Berendson thermostat or velocity rescaling
+            This is typically done using methods like Berendson thermostat or velocity rescaling
+
+            ---
+
+            T = 2/3 * (KE/N) - this is the fundamental relation in classical statistical mechanics that connects
+            the temperature of a system with its kinetic energy per particle
 
         ---
 
-        T = 2/3 * (KE/N) - this is the fundamental relation in classical statistical mechanics that connects
-        the temperature of a system with its kinetic energy per particle
-
+        dof is used to account of degrees of freedom, to account for center of mass drift of the system
          */
+        if dof == 0 {
+            return 0.0;
+        }
         let mut total_kinetic_energy = 0.0;
         let num_particles = particles.len() as f64;
-
         for particle in particles {
             let velocity_sq = particle.velocity.norm_squared();
             total_kinetic_energy += 0.5 * particle.mass * velocity_sq;
         }
         // T = (2/3) * (KE / N)
-        (2.0 / 3.0) * (total_kinetic_energy / num_particles)
+        (2.0) * (total_kinetic_energy) / (dof as f64)
     }
 
     pub fn apply_thermostat(particles: &mut Vec<Particle>, target_temperature: f64) {
-        let current_temperature = compute_temperature(particles);
+        /*
+            Here we are rescaling the velocity in the current step towards the target temperature
+
+        The full term for computing the thermostat is as follows:
+
+        T=3NkB​2​i∑​21​mvi2​
+
+
+         */
+        // computing the degrees of freedom
+
+        let dof = 3 * particles.len().saturating_sub(3);
+
+        let current_temperature = compute_temperature(particles, dof);
         if current_temperature == 0.0 {
             return; // Avoid division by zero
         }
@@ -486,8 +504,8 @@ pub mod lennard_jones_simulations {
             pbc_update(&mut new_simulation_md, box_length);
             // update velocities using the verlet format
             run_verlet_update_nve(&mut new_simulation_md, 0.05, box_length);
-            let temp = compute_temperature(&mut new_simulation_md);
-            println!("The temperature of the system is {}", temp);
+            //let temp = compute_temperature(&mut new_simulation_md);
+            //println!("The temperature of the system is {}", temp);
             apply_thermostat(&mut new_simulation_md, 30.0);
 
             let total_energy = compute_total_energy_and_print(&new_simulation_md, box_length);

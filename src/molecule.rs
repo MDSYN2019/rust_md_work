@@ -56,27 +56,29 @@ fn build_12_exclusions() {}
 //
 //}
 
-pub fn apply_bonded_forces_and_energy(
-    particles: &mut [Particle],
-    bonds: &[SimpleBond],
-    box_length: f64,
-) {
-    let (i, j) = (b.i, b.j);
-    let r_ij = particles[j].position - particles[i].position; // compute the difference between the positions 
-    let r_vec = r_ij;
-    let = r_vec.norm();
-
-    if r == 0.0 {continue;}
-
-    let dr = r - b.r0; // difference between the current length and the equilibrium bond length
-    e_bond += 0.5 * b.k * dr * dr;
-   
-    let f_mag = -b.k * dr;
-    let f_vec = (r_vec / r) * f_mag;
-
-    particles[i].force  += f_vec;
-    particles[j].force += f_vec;
-}
+//pub fn apply_bonded_forces_and_energy(
+//    particles: &mut [Particle],
+//    bonds: &[SimpleBond],
+//    box_length: f64,
+//) {
+//    let (i, j) = (b.i, b.j);
+//    let r_ij = particles[j].position - particles[i].position; // compute the difference between the positions
+//    let r_vec = r_ij;
+//    let r = r_vec.norm();
+//
+//    if r == 0.0 {
+//        continue;
+//    }
+//
+//    let dr = r - b.r0; // difference between the current length and the equilibrium bond length
+//    e_bond += 0.5 * b.k * dr * dr;
+//
+//    let f_mag = -b.k * dr; // magnitude of the force?
+//    let f_vec = (r_vec / r) * f_mag;
+//
+//    particles[i].force += f_vec;
+//    particles[j].force += f_vec;
+//}
 
 #[cfg(test)]
 mod tests {
