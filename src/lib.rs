@@ -436,7 +436,36 @@ pub mod lennard_jones_simulations {
         );
     }
 
-    pub fn apply_thermostat_berendsen(particles: &mut Vec<Particle>, target_temperature: f64) {}
+    pub fn apply_thermostat_berendsen(
+        particles: &mut Vec<Particle>,
+        target_temperature: f64,
+        current_temperature: f64,
+        dt: f64,
+        tau: f64,
+    ) -> f64
+/*
+    If the system's instantaneous temperature T differs from the target temperature T_0, the Berendsen
+    thermostat weakly couples the system to a 'heat bath' that gently nudges T toward T_0 over a characteristic
+    relaxation time
+     */ {
+        if tau <= 0.0 || dt <= 0.0 || current_temperature <= 0.0 || target_temperature <= 0.0 {
+            return 1.0;
+        }
+
+        // Discrete Berendsen: T' = T * (1 + (dt/tau)(T_0/T - 1))
+        // Velocities scale as sqrt (T'/T)
+        let x = (dt / tau) * (target_temperature / current_temperature - 1.0);
+
+        // clamp to avoid negative
+        let x_clamped = x.clamp(-0.9, 10.0);
+        let lambda = (1.0 + x_clamped).max(1e-12).sqrt();
+
+        for particle in particles {
+            particle.velocity *= lambda;
+        }
+        lambda
+    }
+
     pub fn apply_thermostat_another(particles: &mut Vec<Particle>, target_temperature: f64) {}
 
     pub fn pbc_update(particles: &mut Vec<Particle>, box_length: f64) {
@@ -515,26 +544,17 @@ pub mod lennard_jones_simulations {
 
 pub mod general {
     pub struct GeneralStruct {
-        // borrwed a slice of an array
         array: [u8; 64], // an array o
-        //slice: &array,
         slice: [u8; 64], // an array o
         string_entry: str,
     }
 
     impl GeneralStruct {
-        ///
-        ///
         fn print_entry(&self) {
             for entry in &self.slice {
                 println!("the entry in the slice is {}", entry);
             }
         }
-
-        //fn split_string(&self) {
-        //    for word in &self.string_entry.chars {
-        //       println!("{}", word);
-        //   }
     }
 
     fn print_loop(value: &Vec<i32>) {
@@ -543,8 +563,6 @@ pub mod general {
             println!("{} \n", index) // for each value referenced in the index, print out the value index
         }
     }
-    // Vec inherits the methods of slices, because we can obtain a slice reference
-    // from a vector
 
     fn print_string(s: String) {
         println!("print_String: {}", s);
@@ -582,5 +600,36 @@ mod tests {
             sigma: 1.0,
             number_of_atoms: 3,
         };
+    }
+
+    #[test]
+    fn berenden_pull_towards_target() {
+        let mut new_simulation_md =
+            match create_atoms_with_set_positions_and_velocities(3, 300.0, 30.0, 10.0, 10.0) {
+                // How to handle errors - we are returning a result or a string
+                Ok(atoms) => atoms,
+                Err(e) => {
+                    eprintln!("Failed to create atoms: {}", e); // Log the error
+                    return; // Exit early or handle the error as needed
+                }
+            };
+        // mock velocities - T = 300K
+        let mut t = 300.0;
+        let t0 = 350.0;
+        let dt = 0.001;
+        let tau = 0.1;
+
+        for _ in 0..1000 {
+            let _ = lennard_jones_simulations::apply_thermostat_berendsen(
+                &mut new_simulation_md,
+                t,
+                t0,
+                dt,
+                tau,
+            );
+            t = t + (dt / tau) * (t0 - t);
+
+            assert!((t - t0).abs() < 5.0, "Temperature should approach target");
+        }
     }
 }

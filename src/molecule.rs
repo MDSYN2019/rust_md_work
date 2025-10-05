@@ -12,7 +12,7 @@ of interactions
 use nalgebra::Vector3;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct SimpleBond {
     pub i: usize,
     pub j: usize,
@@ -31,6 +31,7 @@ pub struct Atom {
     pub charge: f64,
 }
 
+#[derive(Clone)]
 pub struct Bond {
     pub atom1: usize,
     pub atom2: usize,
@@ -45,7 +46,7 @@ pub struct Angle {
     pub k: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct NonBondedType {
     pub mass: f64,
     pub charge: f64,
@@ -63,13 +64,19 @@ pub fn bond_distance(a1: &Atom, a2: &Atom) -> f64 {
     (a1.position - a2.position).norm()
 }
 
-#[derive(Clone, Debug)]
+#[derive(Default, Clone)]
 pub struct MoleculeTemplate {
     pub name: String,
     pub atom_types: Vec<String>,      // len
     pub positions: Vec<Vector3<f64>>, // x y z for each atom
     pub bonds: Vec<(usize, usize, f64, f64)>,
-    pub exclusion_1_4_scale: Option<f64>,
+    pub exclusion_1_4_scale: Option<f64>, // (i, j, k, k_theta, theta_0)
+}
+
+#[derive(Clone, Default)]
+pub struct System {
+    pub atoms: Vec<Atom>,
+    pub bonds: Vec<Bond>,
 }
 
 // System is all the atoms (global), bonded terms in global indices, and exclusion sets
