@@ -605,7 +605,9 @@ mod tests {
     #[test]
     fn berenden_pull_towards_target() {
         let mut new_simulation_md =
-            match create_atoms_with_set_positions_and_velocities(3, 300.0, 30.0, 10.0, 10.0) {
+            match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
+                3, 300.0, 30.0, 10.0, 10.0,
+            ) {
                 // How to handle errors - we are returning a result or a string
                 Ok(atoms) => atoms,
                 Err(e) => {
