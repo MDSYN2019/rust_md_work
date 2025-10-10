@@ -188,7 +188,7 @@ pub mod lennard_jones_simulations {
             self.velocity[1] = normal.sample(&mut rng);
             self.velocity[2] = normal.sample(&mut rng);
 
-            println!("Assigned MB velocity: {:?}", self.velocity);
+            println!("Assigned Maxwell-Boltzmann velocity: {:?}", self.velocity);
         }
 
         fn update_position_verlet(&mut self, dt: f64) -> () {
@@ -403,7 +403,7 @@ pub mod lennard_jones_simulations {
         (2.0) * (total_kinetic_energy) / (dof as f64)
     }
 
-    pub fn apply_thermostat(particles: &mut Vec<Particle>, target_temperature: f64) {
+    pub fn apply_thermostat(particles: &mut Vec<Particle>, target_temperature: f64) -> () {
         /*
             Here we are rescaling the velocity in the current step towards the target temperature
 
@@ -439,21 +439,25 @@ pub mod lennard_jones_simulations {
     pub fn apply_thermostat_berendsen(
         particles: &mut Vec<Particle>,
         target_temperature: f64,
-        current_temperature: f64,
-        dt: f64,
         tau: f64,
-    ) -> f64
-/*
-    If the system's instantaneous temperature T differs from the target temperature T_0, the Berendsen
-    thermostat weakly couples the system to a 'heat bath' that gently nudges T toward T_0 over a characteristic
-    relaxation time
-     */ {
-        if tau <= 0.0 || dt <= 0.0 || current_temperature <= 0.0 || target_temperature <= 0.0 {
-            return 1.0;
-        }
+        dt: f64,
+    ) -> () {
+        /*
+
+        If the system's instantanepus temperature T differs from the target temperature T_0, the Berendsen
+        thermostat weakly couples the system to a head bath that gently nudges T towards T_0 over a characteristic
+        relaxation time
+
+         */
+        let dof = 3 * particles.len().saturating_sub(3);
+        let current_temperature = compute_temperature(particles, dof);
+
+        //if tau <= 0.0 || dt <= 0.0 || current_temperature <= 0.0 || target_temperature <= 0.0 {
+        //    return 1.0;
+        //}
 
         // Discrete Berendsen: T' = T * (1 + (dt/tau)(T_0/T - 1))
-        // Velocities scale as sqrt (T'/T)
+        // Velocitiea s scale as sqrt (T'/T)
         let x = (dt / tau) * (target_temperature / current_temperature - 1.0);
 
         // clamp to avoid negative
@@ -463,10 +467,7 @@ pub mod lennard_jones_simulations {
         for particle in particles {
             particle.velocity *= lambda;
         }
-        lambda
     }
-
-    pub fn apply_thermostat_another(particles: &mut Vec<Particle>, target_temperature: f64) {}
 
     pub fn pbc_update(particles: &mut Vec<Particle>, box_length: f64) {
         for particle in particles.iter_mut() {
@@ -488,6 +489,7 @@ pub mod lennard_jones_simulations {
         }
 
         let potential_energy = site_site_energy_calculation(particles, box_length);
+
         println!(
             "The potential energy is {}",
             kinetic_energy + potential_energy
@@ -504,7 +506,13 @@ pub mod lennard_jones_simulations {
         )
     }
 
-    pub fn run_md_nve(number_of_steps: i32, dt: f64, box_length: f64) {
+    pub fn run_md_nve(
+        system: &mut Vec<Particle>,
+        number_of_steps: i32,
+        dt: f64,
+        box_length: f64,
+        thermostat: &str,
+    ) {
         /*
         We are now equipt to implement a NVE molecular dynamics simulations.
         define time step and number of steps
@@ -516,28 +524,24 @@ pub mod lennard_jones_simulations {
             number_of_atoms: 2,
         };
 
-        let mut new_simulation_md =
-            match create_atoms_with_set_positions_and_velocities(3, 300.0, 30.0, 10.0, 10.0) {
-                // How to handle errors - we are returning a result or a string
-                Ok(atoms) => atoms,
-                Err(e) => {
-                    eprintln!("Failed to create atoms: {}", e); // Log the error
-                    return; // Exit early or handle the error as needed
-                }
-            };
-
         // Compute the initial total energy of the system
-        let initial_energy = compute_total_energy_and_print(&new_simulation_md, box_length);
+        let initial_energy = compute_total_energy_and_print(&system, box_length);
         // Loop over the total system for number_of_steps
         for i in 0..number_of_steps {
-            pbc_update(&mut new_simulation_md, box_length);
+            // update periodic boundary conditions
+            pbc_update(system, box_length);
             // update velocities using the verlet format
-            run_verlet_update_nve(&mut new_simulation_md, 0.05, box_length);
-            //let temp = compute_temperature(&mut new_simulation_md);
-            //println!("The temperature of the system is {}", temp);
-            apply_thermostat(&mut new_simulation_md, 30.0);
+            run_verlet_update_nve(system, 0.05, box_length);
+            let dof = 3 * system.len().saturating_sub(3);
+            let system_temperature = compute_temperature(system, dof);
+            println!("The temperature of the system is {}", system_temperature);
 
-            let total_energy = compute_total_energy_and_print(&new_simulation_md, box_length);
+            if thermostat == "berendsen" {
+                apply_thermostat_berendsen(system, 300.0, 0.1, 0.05);
+            } else {
+                apply_thermostat(system, 300.0);
+            }
+            let total_energy = compute_total_energy_and_print(&system, box_length);
         }
     }
 }
@@ -598,7 +602,7 @@ mod tests {
         let lj_params_new = lennard_jones_simulations::LJParameters {
             epsilon: 1.0,
             sigma: 1.0,
-            number_of_atoms: 3,
+            number_of_atoms: 10,
         };
     }
 
@@ -606,7 +610,7 @@ mod tests {
     fn berenden_pull_towards_target() {
         let mut new_simulation_md =
             match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
-                3, 300.0, 30.0, 10.0, 10.0,
+                10, 300.0, 30.0, 10.0, 10.0,
             ) {
                 // How to handle errors - we are returning a result or a string
                 Ok(atoms) => atoms,
@@ -616,22 +620,27 @@ mod tests {
                 }
             };
         // mock velocities - T = 300K
-        let mut t = 300.0;
-        let t0 = 350.0;
-        let dt = 0.001;
-        let tau = 0.1;
+        //let mut t = 300.0;
+        //let t0 = 350.0;
+        //let dt = 0.001;
+        //let tau = 0.1;
+        //run_md_nve(1000, 0.001, 10.0, "berendsen");
+        let t0 = 300.0;
+        lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 1000, 0.5, 10.0, "berendsen");
 
-        for _ in 0..1000 {
-            let _ = lennard_jones_simulations::apply_thermostat_berendsen(
-                &mut new_simulation_md,
-                t,
-                t0,
-                dt,
-                tau,
-            );
-            t = t + (dt / tau) * (t0 - t);
-
-            assert!((t - t0).abs() < 5.0, "Temperature should approach target");
-        }
+        //for _ in 0..1000 {
+        //    let _ = lennard_jones_simulations::apply_thermostat_berendsen(
+        //        &mut new_simulation_md,
+        //        t,
+        //        t0,
+        //        dt,
+        //        tau,
+        //    );
+        //    t = t + (dt / tau) * (t0 - t);
+        //    println!("{}", (t - t0).abs());
+        let dof = 3 * new_simulation_md.len().saturating_sub(3);
+        let t = lennard_jones_simulations::compute_temperature(&mut new_simulation_md, dof);
+        println!("Temperature is {}, and target is {}", t, t0);
+        assert!((t - t0).abs() < 5.0, "Temperature should approach target");
     }
 }

@@ -7,7 +7,6 @@ of interactions
 ---
 
 
-1. A clean topoligy
  */
 use nalgebra::Vector3;
 use std::collections::{HashMap, HashSet};
