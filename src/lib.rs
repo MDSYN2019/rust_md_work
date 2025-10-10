@@ -60,8 +60,8 @@ Each `Particle` struct contains:
 - [x] Energy conservation check (NVE tested)
       → still to analyze for NVT/NPT cases
 - [ ] Advanced thermostats:
-      → Berendsen (smooth control)
-      → Langevin (stochastic, ensemble-correct)
+      → Berendsen (smooth control) - Somewhat done
+      → Langevin (stochastic, ensemble-correct) -
 - [ ] Radial Distribution Function (RDF)
 
 */
@@ -112,12 +112,12 @@ pub mod periodic_boundary_conditions {
     impl SimulationBox {
         fn cell_subdivison(&self, n_cells: i64) -> () {
             /*
-                cell subdivision provides a mean for organizing the information about atom positions
-                into a form that avoids most of the unnecessary work and reduces the computational effort to O(N_m) level.
 
-                linked lists are used to associate atoms with the cells in which they reside at any given instant.
+                Cell subdivsision provides a mean for organizing the information about atom positions
+            into a form that avoids most of the unnecessary work and reduces the computational effort to a
+            O(N_m) level.
 
-            A separate list is required for each cell.
+            Linked lists are used to assocaite atoms with the cells in which they reside at any given instant.
 
                  */
 
@@ -204,6 +204,9 @@ pub mod lennard_jones_simulations {
         }
 
         fn update_velocity_verlet(&mut self, a_new: Vector3<f64>, dt: f64) {
+            /*
+            Verlet scheme to update the velocity
+             */
             //self.velocity[0] += 0.5 * (old_acceleration[0] + new_acceleration[0]) * dt;
             //self.velocity[1] += 0.5 * (old_acceleration[1] + new_acceleration[1]) * dt;
             //self.velocity[2] += 0.5 * (old_acceleration[2] + new_acceleration[2]) * dt;
@@ -625,19 +628,9 @@ mod tests {
         //let dt = 0.001;
         //let tau = 0.1;
         //run_md_nve(1000, 0.001, 10.0, "berendsen");
+
         let t0 = 300.0;
         lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 1000, 0.5, 10.0, "berendsen");
-
-        //for _ in 0..1000 {
-        //    let _ = lennard_jones_simulations::apply_thermostat_berendsen(
-        //        &mut new_simulation_md,
-        //        t,
-        //        t0,
-        //        dt,
-        //        tau,
-        //    );
-        //    t = t + (dt / tau) * (t0 - t);
-        //    println!("{}", (t - t0).abs());
         let dof = 3 * new_simulation_md.len().saturating_sub(3);
         let t = lennard_jones_simulations::compute_temperature(&mut new_simulation_md, dof);
         println!("Temperature is {}, and target is {}", t, t0);
