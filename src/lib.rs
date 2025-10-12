@@ -611,6 +611,13 @@ mod tests {
 
     #[test]
     fn berenden_pull_towards_target() {
+        /* mock velocities - T = 300K
+           let mut t = 300.0;
+           let t0 = 350.0;
+           let dt = 0.001;
+           let tau = 0.1;
+        */
+        let t0 = 300.0;
         let mut new_simulation_md =
             match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
                 10, 300.0, 30.0, 10.0, 10.0,
@@ -622,16 +629,10 @@ mod tests {
                     return; // Exit early or handle the error as needed
                 }
             };
-        // mock velocities - T = 300K
-        //let mut t = 300.0;
-        //let t0 = 350.0;
-        //let dt = 0.001;
-        //let tau = 0.1;
-        //run_md_nve(1000, 0.001, 10.0, "berendsen");
 
-        let t0 = 300.0;
         lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 1000, 0.5, 10.0, "berendsen");
         let dof = 3 * new_simulation_md.len().saturating_sub(3);
+        // compute the final temperature of the system
         let t = lennard_jones_simulations::compute_temperature(&mut new_simulation_md, dof);
         println!("Temperature is {}, and target is {}", t, t0);
         assert!((t - t0).abs() < 5.0, "Temperature should approach target");
