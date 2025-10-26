@@ -1,4 +1,4 @@
-pub mod periodic_boundary_conditions {
+Ipub mod periodic_boundary_conditions {
     /*
     How do we handle periodic boundaries and minimum image convention in a simulation program?
 
