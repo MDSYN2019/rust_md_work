@@ -49,3 +49,5 @@ pub fn compute_average_val(
 }
 
 pub fn autocorrelation_function() -> () {}
+
+pub fn radial_distribution_function() -> () {}
