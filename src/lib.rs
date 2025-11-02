@@ -66,6 +66,7 @@ Each `Particle` struct contains:
 
 */
 extern crate assert_type_eq;
+mod error;
 mod lj_parameters;
 mod molecule;
 
@@ -161,11 +162,17 @@ pub mod lennard_jones_simulations {
 
     #[derive(Clone)]
     pub struct Particle {
-        position: Vector3<f64>,
-        velocity: Vector3<f64>,
-        force: Vector3<f64>,
-        lj_parameters: LJParameters,
-        mass: f64,
+        pub position: Vector3<f64>,
+        pub velocity: Vector3<f64>,
+        pub force: Vector3<f64>,
+        pub lj_parameters: LJParameters,
+        pub mass: f64,
+        pub energy: f64,
+    }
+
+    #[derive(Clone)]
+    pub struct SimulationSummary {
+        energy: f64,
     }
 
     impl Particle {
@@ -214,7 +221,7 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    pub fn site_site_energy_calculation(particles: &Vec<Particle>, box_length: f64) -> f64 {
+    pub fn site_site_energy_calculation(particles: &mut Vec<Particle>, box_length: f64) -> f64 {
         /*
         Computing the total Lennard-Jones energy between all distinct pairs of particles in a molecular system,
         using site-site interactions
@@ -302,6 +309,7 @@ pub mod lennard_jones_simulations {
                 }),
                 force: zero(), // initial force on the atom
                 mass: mass,    // the mass
+                energy: 0.0,
             };
 
             // Reset the positions to the maxwell boltzmann distibution of velocities
@@ -480,13 +488,13 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    pub fn compute_total_energy_and_print(particles: &Vec<Particle>, box_length: f64) -> f64 {
+    pub fn compute_total_energy_and_print(particles: &mut Vec<Particle>, box_length: f64) -> f64 {
         /*
         compute the total kinetic + potential energy of the system
          */
         let mut kinetic_energy = 0.0;
 
-        for p in particles {
+        for p in particles.iter_mut() {
             let v2 = p.velocity.norm_squared();
             kinetic_energy += 0.5 * p.mass * v2;
         }
@@ -520,6 +528,7 @@ pub mod lennard_jones_simulations {
         We are now equipt to implement a NVE molecular dynamics simulations.
         define time step and number of steps
          */
+        let mut final_summary = SimulationSummary { energy: 0.0 };
 
         let lj_params_new = LJParameters {
             epsilon: 1.0,
@@ -528,7 +537,7 @@ pub mod lennard_jones_simulations {
         };
 
         // Compute the initial total energy of the system
-        let initial_energy = compute_total_energy_and_print(&system, box_length);
+        let initial_energy = compute_total_energy_and_print(system, box_length);
         // Loop over the total system for number_of_steps
         for i in 0..number_of_steps {
             // update periodic boundary conditions
@@ -544,7 +553,9 @@ pub mod lennard_jones_simulations {
             } else {
                 apply_thermostat(system, 300.0);
             }
-            let total_energy = compute_total_energy_and_print(&system, box_length);
+            let total_energy = compute_total_energy_and_print(system, box_length);
+            // update the summary
+            final_summary.energy = total_energy
         }
     }
 }
@@ -618,6 +629,8 @@ mod tests {
            let tau = 0.1;
         */
         let t0 = 300.0;
+
+        // Define the new simulation for nve
         let mut new_simulation_md =
             match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
                 10, 300.0, 30.0, 10.0, 10.0,
