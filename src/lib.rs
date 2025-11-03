@@ -346,7 +346,9 @@ pub mod lennard_jones_simulations {
     }
 
     pub fn compute_forces(particles: &mut Vec<Particle>, box_length: f64) {
-        // TODO
+        /*
+        Computing forces between the molecules
+         */
         for p in particles.iter_mut() {
             p.force = Vector3::zeros();
         }
