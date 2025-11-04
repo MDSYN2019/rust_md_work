@@ -147,6 +147,7 @@ pub mod lennard_jones_simulations {
 
     use super::*;
     use crate::lj_parameters::lennard_jones_potential;
+    use error::compute_average_val;
     use nalgebra::{zero, Vector3};
     use rand::prelude::*;
     use rand::Rng;
@@ -538,6 +539,8 @@ pub mod lennard_jones_simulations {
             number_of_atoms: 2,
         };
 
+        let mut values: Vec<f32> = Vec::new();
+
         // Compute the initial total energy of the system
         let initial_energy = compute_total_energy_and_print(system, box_length);
         // Loop over the total system for number_of_steps
@@ -557,8 +560,12 @@ pub mod lennard_jones_simulations {
             }
             let total_energy = compute_total_energy_and_print(system, box_length);
             // update the summary
-            final_summary.energy = total_energy
+
+            final_summary.energy = total_energy;
+            values.push(total_energy as f32);
         }
+
+        compute_average_val(&mut values, 2, number_of_steps as u64);
     }
 }
 

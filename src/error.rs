@@ -24,9 +24,9 @@ fn get_property_value(field: Option<PropertyField>, particle: Particle) -> Optio
         None => None,
     }
 }
+
 pub fn compute_average_val(
-    particles: &mut Vec<Particle>,
-    field: Option<PropertyField>,
+    container_value: &mut Vec<f32>,
     block_steps: u64,
     number_of_steps: u64,
 ) -> ()
@@ -41,10 +41,15 @@ pub fn compute_average_val(
     }
     // ensure that the property we want to compute the block average for
     // actually exists within the simulation code
-    let mut val: Vec<f64> = vec![];
-    for block in particles.chunks(block_steps as usize) {
-        println!("Computing property over the block {:?}", block_steps);
-        //
+
+    for (i, chunk) in container_value.chunks(block_steps as usize).enumerate() {
+        let summed_values: f32 = chunk.iter().sum();
+        println!(
+            "chunk {:?}: {:?} with block sizes as {:?}",
+            i,
+            summed_values / block_steps as f32,
+            block_steps
+        );
     }
 }
 
