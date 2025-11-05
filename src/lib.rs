@@ -143,6 +143,11 @@ pub fn lennard_jones_force_scalar(r: f64, sigma: f64, epsilon: f64) -> f64 {
     24.0 * epsilon * (2.0 * sr12 - sr6) / r
 }
 
+#[inline]
+fn safe_norm(x: f64) -> f64 {
+    if x < 1e-12 { 1e-12 } else { x }
+}
+
 pub mod lennard_jones_simulations {
 
     use super::*;
@@ -152,7 +157,10 @@ pub mod lennard_jones_simulations {
     use rand::prelude::*;
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
-
+    // importing bonds
+    use molecule::apply_bonded_forces_and_energy;
+    use molecule::make_h2_sytem;
+    use molecule::Bond;
     #[derive(Clone)]
     pub struct LJParameters {
         // lennard jones parameters and the number of atoms that we have of that parameter
@@ -269,6 +277,7 @@ pub mod lennard_jones_simulations {
         mass: f64,
         v_max: f64,
         box_dim_max: f64,
+        use_atom: bool,
     ) -> Result<Vec<Particle>, String> {
         /*
 
@@ -282,43 +291,45 @@ pub mod lennard_jones_simulations {
         let mut vector_positions: Vec<Particle> = Vec::new();
         let mut rng = rand::rng();
         // Create the number of atoms in the system with the system as necessary
-        for _ in 0..number_of_atoms {
-            // For each particle, we wish to create the initial posiiton,
-            // the velocity, and the LJ parameters attached to it
-            let mut particle = Particle {
-                // create position for the atom in question
-                position: Vector3::new(
-                    // generate x y z position values between -10 and 10
-                    rng.random_range(-box_dim_max..box_dim_max),
-                    rng.random_range(-box_dim_max..box_dim_max),
-                    rng.random_range(-box_dim_max..box_dim_max),
-                ),
+        if use_atom == False {
+            for _ in 0..number_of_atoms {
+                // For each particle, we wish to create the initial posiiton,
+                // the velocity, and the LJ parameters attached to it
+                let mut particle = Particle {
+                    // create position for the atom in question
+                    position: Vector3::new(
+                        // generate x y z position values between -10 and 10
+                        rng.random_range(-box_dim_max..box_dim_max),
+                        rng.random_range(-box_dim_max..box_dim_max),
+                        rng.random_range(-box_dim_max..box_dim_max),
+                    ),
 
-                // create velocity for atom in question
-                velocity: Vector3::new(
-                    // generate velocity values between -1 and 1
-                    rng.random_range(-1.0..1.0),
-                    rng.random_range(-1.0..1.0),
-                    rng.random_range(-1.0..1.0),
-                ),
+                    // create velocity for atom in question
+                    velocity: Vector3::new(
+                        // generate velocity values between -1 and 1
+                        rng.random_range(-1.0..1.0),
+                        rng.random_range(-1.0..1.0),
+                        rng.random_range(-1.0..1.0),
+                    ),
 
-                // Create the LJ parameters for the atom - default parameters are 1.0, 1.0
-                lj_parameters: (LJParameters {
-                    epsilon: 1.0,
-                    sigma: 1.0,
-                    number_of_atoms: 3,
-                }),
-                force: zero(), // initial force on the atom
-                mass: mass,    // the mass
-                energy: 0.0,
-            };
+                    // Create the LJ parameters for the atom - default parameters are 1.0, 1.0
+                    lj_parameters: (LJParameters {
+                        epsilon: 1.0,
+                        sigma: 1.0,
+                        number_of_atoms: 3,
+                    }),
+                    force: zero(), // initial force on the atom
+                    mass: mass,    // the mass
+                    energy: 0.0,
+                };
 
-            // Reset the positions to the maxwell boltzmann distibution of velocities
-            particle.maxwellboltzmannvelocity(temp, mass, v_max);
-            // push those values into the vector
-            vector_positions.push(particle); // push the newly assigned particle into the positions
+                // Reset the positions to the maxwell boltzmann distibution of velocities
+                particle.maxwellboltzmannvelocity(temp, mass, v_max);
+                // push those values into the vector
+                vector_positions.push(particle); // push the newly assigned particle into the positions
+            }
+            Ok(vector_positions)
         }
-        Ok(vector_positions)
     }
 
     pub fn run_verlet_update_nve(particles: &mut Vec<Particle>, dt: f64, box_length: f64) -> () {
@@ -346,7 +357,26 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    pub fn compute_forces(particles: &mut Vec<Particle>, box_length: f64) {
+
+    pub fn apply_bond_force(
+	particles: &mut [Particle],
+	b: &Bond,
+	box_length: f64,
+    ) -> f64 {
+	let rij = particles[b.j].position - particles[b.i].position;
+	let rij_mic = minimum_image_convention(rij, box_length);
+	let r = safe_norm(rij_mic.norm());
+	let dr = r - b.r0;
+	let f_mag = -b.k * dr;             // along r̂, attractive if r>r0
+	let f_vec = (rij_mic / r) * f_mag; // vector force on i
+	
+	particles[b.i].force += f_vec;
+	particles[b.j].force -= f_vec;
+	
+	0.5 * b.k * dr * dr
+    }
+    
+    pub fn compute_forces(particles: &mut Vec<Particle>, bonds: &[Bond], box_length: f64) {
         /*
         Computing forces between the molecules
          */
@@ -384,6 +414,8 @@ pub mod lennard_jones_simulations {
                 );
             }
         }
+	// apply bonded terms
+	let _ = apply_bonded_forces_and_energy()
     }
 
     pub fn compute_temperature(particles: &mut Vec<Particle>, dof: usize) -> f64 {

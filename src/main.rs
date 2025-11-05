@@ -27,7 +27,7 @@ fn main() {
     // create a new system
     let mut new_simulation_md =
         match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
-            3, 300.0, 30.0, 10.0, 10.0,
+            3, 300.0, 30.0, 10.0, 10.0, False,
         ) {
             // How to handle errors - we are returning a result or a string
             Ok(atoms) => atoms,

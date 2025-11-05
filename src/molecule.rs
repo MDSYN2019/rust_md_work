@@ -82,7 +82,7 @@ pub struct System {
 }
 
 fn safe_norm(v: &Vector3<f64>) -> f64 {
-    let r = v.norm;
+    let r = v.norm();
     if r < 1e-12 {
         1e-12
     } else {
