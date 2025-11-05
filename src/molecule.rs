@@ -4,7 +4,7 @@ Expanding your rust based molecular dynamics (MD) simulation from point particle
 to molecules with bonded interactions and force fields requires adding new types
 of interactions
 
----
+x`---
 
 
  */
@@ -21,6 +21,8 @@ pub struct SimpleBond {
 
 #[derive(Clone)]
 pub struct Atom {
+    // Definition of the atom, force on the atom, as well as its current position and velocity
+    // as well as the mass and charge
     pub id: usize,
     pub position: Vector3<f64>,
     pub velocity: Vector3<f64>,
@@ -60,6 +62,7 @@ pub struct ForceField {
 }
 
 pub fn bond_distance(a1: &Atom, a2: &Atom) -> f64 {
+    // Compute the bond distance between atoms
     (a1.position - a2.position).norm()
 }
 
@@ -78,37 +81,91 @@ pub struct System {
     pub bonds: Vec<Bond>,
 }
 
+fn safe_norm(v: &Vector3<f64>) -> f64 {
+    let r = v.norm;
+    if r < 1e-12 {
+        1e-12
+    } else {
+        r
+    }
+}
+
 // System is all the atoms (global), bonded terms in global indices, and exclusion sets
 
-fn build_12_exclusions() {}
+pub fn compute_bond_force(atoms: &mut [Atom], bond: &Bond) -> f64 {
+    /*
+    Compute the bond energy,
+     */
+    let (i, j) = (bond.atom1, bond.atom2);
+    let r_vec = atoms[j].position - atoms[i].position;
+    let r = r_vec.norm();
+    let dr = r - bond.r0; // the difference between the current position and the equilibrium position
+    let f_mag = -bond.k * dr; // force magnitude
+    let f_vec = (r_vec / r) * f_mag;
 
-//pub compute_bond_force(atoms: %mut [Atom], bond: &Bond) {
-//
-//}
+    atoms[i].force += f_vec;
+    atoms[j].force -= f_vec;
 
-//pub fn apply_bonded_forces_and_energy(
-//    particles: &mut [Particle],
-//    bonds: &[SimpleBond],
-//    box_length: f64,
-//) {
-//    let (i, j) = (b.i, b.j);
-//    let r_ij = particles[j].position - particles[i].position; // compute the difference between the positions
-//    let r_vec = r_ij;
-//    let r = r_vec.norm();
-//
-//    if r == 0.0 {
-//        continue;
-//    }
-//
-//    let dr = r - b.r0; // difference between the current length and the equilibrium bond length
-//    e_bond += 0.5 * b.k * dr * dr;
-//
-//    let f_mag = -b.k * dr; // magnitude of the force?
-//    let f_vec = (r_vec / r) * f_mag;
-//
-//    particles[i].force += f_vec;
-//    particles[j].force += f_vec;
-//}
+    0.5 * bond.k * dr * dr // return the bond energy
+}
+
+pub fn apply_bonded_forces_and_energy(atoms: &mut [Atom], bonds: &[Bond]) -> f64 {
+    let mut e_bond = 0.0;
+
+    for b in bonds {
+        e_bond += compute_bond_force(atoms, b);
+    }
+    e_bond
+}
+
+pub fn make_h2_sytem() -> System {
+    /*
+    Reduced units:
+
+    mass = 1.0 for each H (you can sue 1.0 amu reduced)
+
+
+    The H-H distance r oscillates around r0 = 0.74
+
+     */
+    let r0 = 0.74;
+    let k = 100.0;
+    let x = 0.5 * r0;
+
+    let mut atoms = vec![
+        Atom {
+            id: 0,
+            position: Vector3::new(-x, 0.0, 0.0),
+            velocity: Vector3::new(0.0, 0.0, 0.0),
+            force: Vector3::zeros(),
+            atom_type: 0,
+            mass: 1.0,
+            charge: 0.0,
+        },
+        Atom {
+            id: 1,
+            position: Vector3::new(x, 0.0, 0.0),
+            velocity: Vector3::new(0.0, 0.0, 0.0),
+            force: Vector3::zeros(),
+            atom_type: 0,
+            mass: 1.0,
+            charge: 0.0,
+        },
+    ];
+
+    let stretch = 0.05;
+    atoms[1].position.x += 0.5 * stretch;
+    atoms[0].position.x -= 0.5 * stretch;
+
+    let bonds = vec![Bond {
+        atom1: 0,
+        atom2: 1,
+        k,
+        r0,
+    }];
+
+    System { atoms, bonds }
+}
 
 #[cfg(test)]
 mod tests {
