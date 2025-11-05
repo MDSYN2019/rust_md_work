@@ -118,7 +118,7 @@ pub fn apply_bonded_forces_and_energy(atoms: &mut [Atom], bonds: &[Bond]) -> f64
     e_bond
 }
 
-pub fn make_h2_sytem() -> System {
+pub fn make_h2_system() -> System {
     /*
     Reduced units:
 
