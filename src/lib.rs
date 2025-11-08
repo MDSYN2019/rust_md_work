@@ -73,7 +73,6 @@ mod molecule;
 // Use when importing the finished minimization modulexo
 //use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
 
-
 pub mod tensors {
     pub fn outer_product<T>(a: &[T], b: &[T], default_value: T) -> Vec<Vec<T>>
     where
@@ -162,6 +161,7 @@ pub mod lennard_jones_simulations {
     use rand::prelude::*;
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
+
     // importing bonds
     use molecule::apply_bonded_forces_and_energy;
     use molecule::make_h2_system;
@@ -178,12 +178,15 @@ pub mod lennard_jones_simulations {
 
     #[derive(Clone)]
     pub struct Particle {
+        pub id: usize,
         pub position: Vector3<f64>,
         pub velocity: Vector3<f64>,
         pub force: Vector3<f64>,
         pub lj_parameters: LJParameters,
         pub mass: f64,
         pub energy: f64,
+        pub atom_type: f64,
+        pub charge: f64,
     }
 
     #[derive(Clone)]
@@ -192,12 +195,15 @@ pub mod lennard_jones_simulations {
     }
 
     pub enum InitOutput {
-	Particles(Vec<Particle>), // define a particles system (single point particle) 
-	Systems(Vec<System>), // Define actual molecules 
+        Particles(Vec<Particle>), // define a particles system (single point particle)
+        Systems(Vec<System>),     // Define actual molecules
     }
 
-    pub enum InitMode { Atoms, Molecules }
-    
+    pub enum InitMode {
+        Atoms,
+        Molecules,
+    }
+
     impl Particle {
         fn distance(&self, other: &Particle) -> f64 {
             // Compute the distance between two particles
@@ -292,21 +298,22 @@ pub mod lennard_jones_simulations {
         v_max: f64,
         box_dim_max: f64,
         use_atom: bool,
-    ) -> Result<Vec<Particle>, String> {
+    ) -> Result<InitOutput, String> {
         /*
 
-            Create N atoms with temperature and mass
+        Create N atoms with temperature and mass
 
-            Here, we are going with the assumption that we are creating a simulation box
-            that is cubic, meaning that we will get a (min + max) * (min + max) *  (min+max) volume
+        Here, we are going with the assumption that we are creating a simulation box
+        that is cubic, meaning that we will get a (min + max) * (min + max) *  (min+max) volume
         system for all the molecules
 
-             */
+         */
         let mut vector_positions: Vec<Particle> = Vec::new();
+        let mut vector_system_positions: Vec<System> = Vec::new();
         let mut rng = rand::rng();
         // Create the number of atoms in the system with the system as necessary
-        if use_atom == False {
-            for _ in 0..number_of_atoms {
+        if !use_atom {
+            for index in 0..number_of_atoms {
                 // For each particle, we wish to create the initial posiiton,
                 // the velocity, and the LJ parameters attached to it
                 let mut particle = Particle {
@@ -325,7 +332,6 @@ pub mod lennard_jones_simulations {
                         rng.random_range(-1.0..1.0),
                         rng.random_range(-1.0..1.0),
                     ),
-
                     // Create the LJ parameters for the atom - default parameters are 1.0, 1.0
                     lj_parameters: (LJParameters {
                         epsilon: 1.0,
@@ -335,6 +341,9 @@ pub mod lennard_jones_simulations {
                     force: zero(), // initial force on the atom
                     mass: mass,    // the mass
                     energy: 0.0,
+                    atom_type: 0.0,
+                    charge: 0.0,
+                    id: index as usize,
                 };
 
                 // Reset the positions to the maxwell boltzmann distibution of velocities
@@ -342,23 +351,14 @@ pub mod lennard_jones_simulations {
                 // push those values into the vector
                 vector_positions.push(particle); // push the newly assigned particle into the positions
             }
-            Ok(vector_positions)
+            Ok(InitOutput::Particles(vector_positions))
         } else {
-            let mut h2_system: System = make_h2_system();
-
-	    // This needs to be fixed
+            // This needs to be fixed
             for _ in 0..number_of_atoms {
-		let mut particle = Particle {
-		    position : Vector3::new(
-			h2_system[0].position[0],
-			h2_system[0].position[1],
-			h2_system[0].position[2],		
-		    ),
-
-		    // TODO
-		    
-		}
-	    }
+                let mut h2_system = make_h2_system(); //
+                vector_system_positions.push(h2_system);
+            }
+            Ok(InitOutput::Systems(vector_system_positions))
         }
     }
 
@@ -388,15 +388,15 @@ pub mod lennard_jones_simulations {
     }
 
     pub fn apply_bond_force(particles: &mut [Particle], b: &Bond, box_length: f64) -> f64 {
-        let rij = particles[b.j].position - particles[b.i].position;
+        let rij = particles[b.atom1].position - particles[b.atom2].position;
         let rij_mic = minimum_image_convention(rij, box_length);
         let r = safe_norm(rij_mic.norm());
         let dr = r - b.r0;
         let f_mag = -b.k * dr; // along r̂, attractive if r>r0
         let f_vec = (rij_mic / r) * f_mag; // vector force on i
 
-        particles[b.i].force += f_vec;
-        particles[b.j].force -= f_vec;
+        particles[b.atom1].force += f_vec;
+        particles[b.atom2].force -= f_vec;
 
         0.5 * b.k * dr * dr
     }

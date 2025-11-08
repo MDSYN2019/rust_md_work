@@ -8,6 +8,8 @@ x`---
 
 
  */
+use crate::lennard_jones_simulations::LJParameters;
+use crate::lennard_jones_simulations::Particle;
 use nalgebra::Vector3;
 use std::collections::{HashMap, HashSet};
 
@@ -77,7 +79,7 @@ pub struct MoleculeTemplate {
 
 #[derive(Clone, Default)]
 pub struct System {
-    pub atoms: Vec<Atom>,
+    pub atoms: Vec<Particle>,
     pub bonds: Vec<Bond>,
 }
 
@@ -133,23 +135,35 @@ pub fn make_h2_system() -> System {
     let x = 0.5 * r0;
 
     let mut atoms = vec![
-        Atom {
+        Particle {
             id: 0,
             position: Vector3::new(-x, 0.0, 0.0),
             velocity: Vector3::new(0.0, 0.0, 0.0),
             force: Vector3::zeros(),
-            atom_type: 0,
+            atom_type: 0.0,
             mass: 1.0,
             charge: 0.0,
+            energy: 0.0,
+            lj_parameters: (LJParameters {
+                epsilon: 1.0,
+                sigma: 1.0,
+                number_of_atoms: 3, // this needs to be corrected
+            }),
         },
-        Atom {
+        Particle {
             id: 1,
             position: Vector3::new(x, 0.0, 0.0),
             velocity: Vector3::new(0.0, 0.0, 0.0),
             force: Vector3::zeros(),
-            atom_type: 0,
+            atom_type: 0.0,
             mass: 1.0,
             charge: 0.0,
+            energy: 0.0,
+            lj_parameters: (LJParameters {
+                epsilon: 1.0,
+                sigma: 1.0,
+                number_of_atoms: 3, // this needs to be corrected
+            }),
         },
     ];
 
