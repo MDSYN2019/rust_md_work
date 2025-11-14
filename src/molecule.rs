@@ -1,3 +1,4 @@
+use crate::lennard_jones_simulations::minimum_image_convention;
 /*
 
 Expanding your rust based molecular dynamics (MD) simulation from point particles
@@ -94,13 +95,14 @@ fn safe_norm(v: &Vector3<f64>) -> f64 {
 
 // System is all the atoms (global), bonded terms in global indices, and exclusion sets
 
-pub fn compute_bond_force(atoms: &mut [Atom], bond: &Bond) -> f64 {
+pub fn compute_bond_force(atoms: &mut Vec<Particle>, bond: &Bond, box_length: f64) -> f64 {
     /*
     Compute the bond energy,
      */
-    let (i, j) = (bond.atom1, bond.atom2);
-    let r_vec = atoms[j].position - atoms[i].position;
-    let r = r_vec.norm();
+    let (i, j) = (bond.atom1, bond.atom2); // get atoms#
+    let r_vec = atoms[j].position - atoms[i].position; // get vector for position
+    let rij_mic = minimum_image_convention(r_vec, box_length);
+    let r = rij_mic.norm(); // get distance
     let dr = r - bond.r0; // the difference between the current position and the equilibrium position
     let f_mag = -bond.k * dr; // force magnitude
     let f_vec = (r_vec / r) * f_mag;
@@ -111,11 +113,18 @@ pub fn compute_bond_force(atoms: &mut [Atom], bond: &Bond) -> f64 {
     0.5 * bond.k * dr * dr // return the bond energy
 }
 
-pub fn apply_bonded_forces_and_energy(atoms: &mut [Atom], bonds: &[Bond]) -> f64 {
+pub fn apply_bonded_forces_and_energy(
+    atoms: &mut Vec<Particle>,
+    bonds: &[Bond],
+    box_length: f64,
+) -> f64 {
+    /*
+    For all the bonds, return the bond energy
+     */
     let mut e_bond = 0.0;
 
     for b in bonds {
-        e_bond += compute_bond_force(atoms, b);
+        e_bond += compute_bond_force(atoms, b, box_length);
     }
     e_bond
 }

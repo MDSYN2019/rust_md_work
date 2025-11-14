@@ -263,9 +263,9 @@ pub mod lennard_jones_simulations {
             We already have a set of particles with the lennard jones parameters defined and stored within. Using
             that data, we need to compute the site_site energy
 
-             */
-        let mut total_energy = 0.0;
+         */
 
+        let mut total_energy = 0.0;
         for i in 0..particles.len() {
             for j in (i + 1)..particles.len() {
                 // double loop over all coordinates in the system
@@ -287,7 +287,6 @@ pub mod lennard_jones_simulations {
                 total_energy += potential;
             }
         }
-
         total_energy
     }
 
@@ -355,35 +354,55 @@ pub mod lennard_jones_simulations {
         } else {
             // This needs to be fixed
             for _ in 0..number_of_atoms {
-                let mut h2_system = make_h2_system(); //
+                let h2_system = make_h2_system(); //
                 vector_system_positions.push(h2_system);
             }
             Ok(InitOutput::Systems(vector_system_positions))
         }
     }
 
-    pub fn run_verlet_update_nve(particles: &mut Vec<Particle>, dt: f64, box_length: f64) -> () {
+    pub fn run_verlet_update_nve(state: &mut InitOutput, dt: f64, box_length: f64) -> () {
         /*
         Update the position and velocity of the particle using the verlet scheme
          */
-        for particle in particles.iter_mut() {
-            particle.update_position_verlet(dt);
-        }
-        pbc_update(particles, box_length);
-        compute_forces(particles, box_length);
+        match state {
+            InitOutput::Particles(particles) => {
+                for particle in particles.iter_mut() {
+                    particle.update_position_verlet(dt);
+                }
 
-        for particle in particles.iter_mut() {
-            println!(
-                "The original position and velocity is {:?} and {:?} ",
-                particle.position, particle.velocity
-            );
-            let a_new = particle.force / particle.mass;
-            particle.update_velocity_verlet(a_new, dt);
+                pbc_update(particles, box_length);
+                compute_forces_particles(particles, box_length);
 
-            println!(
-                "After a iteration step, the position and velocity is {:?} and {:?} ",
-                particle.position, particle.velocity
-            );
+                for particle in particles.iter_mut() {
+                    println!(
+                        "The original position and velocity is {:?} and {:?} ",
+                        particle.position, particle.velocity
+                    );
+                    let a_new = particle.force / particle.mass;
+                    particle.update_velocity_verlet(a_new, dt);
+
+                    println!(
+                        "After a iteration step, the position and velocity is {:?} and {:?} ",
+                        particle.position, particle.velocity
+                    );
+                }
+            }
+            // for each 'system' - actual molecule in the simulation
+            InitOutput::Systems(systems) => {
+                for sys in systems.iter_mut() {
+                    for s in sys.atoms.iter_mut() {
+                        println!(
+                            "The original position and velocity is {:?} and {:?} for the system",
+                            s.position, s.velocity
+                        );
+
+                        let a_new = s.force / s.mass;
+                        s.update_velocity_verlet(a_new, dt);
+                    }
+                    pbc_update(&mut sys.atoms, box_length);
+                }
+            }
         }
     }
 
@@ -401,9 +420,9 @@ pub mod lennard_jones_simulations {
         0.5 * b.k * dr * dr
     }
 
-    pub fn compute_forces(particles: &mut Vec<Particle>, bonds: &[Bond], box_length: f64) {
+    pub fn compute_forces_particles(particles: &mut Vec<Particle>, box_length: f64) {
         /*
-        Computing forces between the molecules
+        Computing forces between the single point particles
          */
         for p in particles.iter_mut() {
             p.force = Vector3::zeros();
@@ -440,74 +459,128 @@ pub mod lennard_jones_simulations {
             }
         }
         // apply bonded terms
-        let _ = apply_bonded_forces_and_energy();
+        //let bonded_terms = apply_bonded_forces_and_energy(particles, bonds);
     }
 
-    pub fn compute_temperature(particles: &mut Vec<Particle>, dof: usize) -> f64 {
+    pub fn compute_forces_system(
+        atoms: &mut Vec<Particle>,
+        bonds: &[Bond],
+        box_length: f64,
+    ) -> f64 {
         /*
-            Compute the current temperature of the system
-
-            To implement a thermostat for a molecular dynamics (MD) simulation in Rust, we need
-            to control the temperature of the system by adjusting the velocities of the particles
-
-            This is typically done using methods like Berendson thermostat or velocity rescaling
-
-            ---
-
-            T = 2/3 * (KE/N) - this is the fundamental relation in classical statistical mechanics that connects
-            the temperature of a system with its kinetic energy per particle
-
-        ---
-
-        dof is used to account of degrees of freedom, to account for center of mass drift of the system
+        Initialize the forces on the systems (molecules) in the simulation box, and apply newton's third law to each system (molecule)
          */
+        for a in atoms.iter_mut() {
+            a.force = Vector3::zeros();
+        }
+
+        apply_bonded_forces_and_energy(atoms, bonds, box_length)
+    }
+
+    pub fn compute_temperature_particles(particles: &[Particle], dof: usize) -> f64 {
         if dof == 0 {
             return 0.0;
         }
+
         let mut total_kinetic_energy = 0.0;
-        let num_particles = particles.len() as f64;
-        for particle in particles {
-            let velocity_sq = particle.velocity.norm_squared();
-            total_kinetic_energy += 0.5 * particle.mass * velocity_sq;
+        for p in particles.iter() {
+            let v2 = p.velocity.norm_squared();
+            total_kinetic_energy += 0.5 * p.mass * v2;
         }
-        // T = (2/3) * (KE / N)
-        (2.0) * (total_kinetic_energy) / (dof as f64)
+
+        2.0 * total_kinetic_energy / (dof as f64)
     }
 
-    pub fn apply_thermostat(particles: &mut Vec<Particle>, target_temperature: f64) -> () {
-        /*
-            Here we are rescaling the velocity in the current step towards the target temperature
+    pub fn compute_temperature(state: &mut InitOutput, dof: usize) -> f64 {
+        match state {
+            InitOutput::Particles(p) => compute_temperature_particles(p, dof),
+            InitOutput::Systems(systems) => {
+                if dof == 0 {
+                    return 0.0;
+                }
 
-        The full term for computing the thermostat is as follows:
+                let mut total_ke = 0.0;
+                let mut total_atoms = 0usize;
 
-        T=3NkB​2​i∑​21​mvi2​
+                for sys in systems.iter_mut() {
+                    for a in sys.atoms.iter() {
+                        total_ke += 0.5 * a.mass * a.velocity.norm_squared();
+                        total_atoms += 1;
+                    }
+                }
 
-
-         */
-        // computing the degrees of freedom
-
-        let dof = 3 * particles.len().saturating_sub(3);
-
-        let current_temperature = compute_temperature(particles, dof);
-        if current_temperature == 0.0 {
-            return; // Avoid division by zero
+                if total_atoms == 0 {
+                    0.0
+                } else {
+                    2.0 * total_ke / (dof as f64)
+                }
+            }
         }
-
-        // Compute scaling factor
-        let lambda = (target_temperature / current_temperature).sqrt();
-
-        // Rescale velocities
-        for particle in particles {
-            particle.velocity *= lambda;
-        }
-
-        println!(
-            "Applied thermostat: Current Temp = {:.2}, Target Temp = {:.2}, Scaling Factor = {:.2}",
-            current_temperature, target_temperature, lambda
-        );
     }
 
-    pub fn apply_thermostat_berendsen(
+    pub fn apply_thermostat(state: &mut InitOutput, target_temperature: f64) {
+        match state {
+            InitOutput::Particles(particles) => {
+                // dof: subtract 3 to account for removing COM motion (classic MD trick)
+                let dof = 3 * particles.len().saturating_sub(3);
+                if dof == 0 {
+                    return;
+                }
+
+                let current_temperature = compute_temperature_particles(particles, dof);
+                if current_temperature == 0.0 {
+                    return;
+                }
+
+                let lambda = (target_temperature / current_temperature).sqrt();
+
+                for p in particles.iter_mut() {
+                    p.velocity *= lambda;
+                }
+
+                println!(
+                    "Thermostat [Particles]: T = {:.2} -> {:.2}, λ = {:.4}",
+                    current_temperature, target_temperature, lambda
+                );
+            }
+
+            InitOutput::Systems(systems) => {
+                // Option A: rescale each system independently (simple & clear)
+                for (si, sys) in systems.iter_mut().enumerate() {
+                    let natoms = sys.atoms.len();
+                    if natoms == 0 {
+                        continue;
+                    }
+
+                    let dof = 3 * natoms.saturating_sub(3);
+                    if dof == 0 {
+                        continue;
+                    }
+
+                    let current_temperature = compute_temperature_particles(&sys.atoms, dof);
+                    if current_temperature == 0.0 {
+                        continue;
+                    }
+
+                    let lambda = (target_temperature / current_temperature).sqrt();
+
+                    for a in sys.atoms.iter_mut() {
+                        a.velocity *= lambda;
+                    }
+
+                    println!(
+                        "Thermostat [System #{si}]: T = {:.2} -> {:.2}, λ = {:.4}",
+                        current_temperature, target_temperature, lambda
+                    );
+                }
+
+                // Option B (alternative): compute one global T over all atoms, apply single λ.
+                // Implement later if you want physically consistent global NVT.
+            }
+        }
+    }
+
+    pub fn apply_thermostat_berendsen_particles(
         particles: &mut Vec<Particle>,
         target_temperature: f64,
         tau: f64,
@@ -521,7 +594,7 @@ pub mod lennard_jones_simulations {
 
          */
         let dof = 3 * particles.len().saturating_sub(3);
-        let current_temperature = compute_temperature(particles, dof);
+        let current_temperature = compute_temperature_particles(particles, dof);
 
         //if tau <= 0.0 || dt <= 0.0 || current_temperature <= 0.0 || target_temperature <= 0.0 {
         //    return 1.0;
@@ -540,7 +613,40 @@ pub mod lennard_jones_simulations {
         }
     }
 
+    pub fn apply_thermostat_berendsen(
+        state: &mut InitOutput,
+        target_temperature: f64,
+        tau: f64,
+        dt: f64,
+    ) {
+        match state {
+            InitOutput::Particles(particles) => {
+                apply_thermostat_berendsen_particles(particles, target_temperature, tau, dt);
+            }
+            InitOutput::Systems(systems) => {
+                // Option A: per-molecule coupling
+                for sys in systems.iter_mut() {
+                    apply_thermostat_berendsen_particles(
+                        &mut sys.atoms,
+                        target_temperature,
+                        tau,
+                        dt,
+                    );
+                }
+
+                // Option B (if you prefer one global T and λ across all atoms):
+                //  - flatten all atoms, compute global T, single λ
+                //  - apply to every atom in every sys
+                // Do that later if you care about strict ensemble correctness.
+            }
+        }
+    }
+
     pub fn pbc_update(particles: &mut Vec<Particle>, box_length: f64) {
+        /*
+        Depending on what kind of system we are injecting to this function, we want to produce the correct
+        pbc update to the coordinates
+         */
         for particle in particles.iter_mut() {
             for i in 0..3 {
                 particle.position[i] = particle.position[i].rem_euclid(box_length);
@@ -548,25 +654,38 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    pub fn compute_total_energy_and_print(particles: &mut Vec<Particle>, box_length: f64) -> f64 {
+    pub fn compute_total_energy_and_print(state: &mut InitOutput, box_length: f64) -> f64 {
         /*
         compute the total kinetic + potential energy of the system
          */
+        let mut bond_energy = 0.0;
         let mut kinetic_energy = 0.0;
+        let mut potential_energy = 0.0;
 
-        for p in particles.iter_mut() {
-            let v2 = p.velocity.norm_squared();
-            kinetic_energy += 0.5 * p.mass * v2;
+        match state {
+            InitOutput::Particles(particles) => {
+                for p in particles.iter_mut() {
+                    let v2 = p.velocity.norm_squared();
+                    kinetic_energy += 0.5 * p.mass * v2;
+                }
+                potential_energy = site_site_energy_calculation(particles, box_length);
+            }
+
+            InitOutput::Systems(systems) => {
+                for sys in systems.iter_mut() {
+                    for a in sys.atoms.iter() {
+                        let v2 = a.velocity.norm_squared();
+                        kinetic_energy += 0.5 * a.mass * v2;
+                    }
+                    potential_energy = site_site_energy_calculation(&mut sys.atoms, box_length);
+                }
+            }
         }
-
-        let potential_energy = site_site_energy_calculation(particles, box_length);
 
         println!(
             "The potential energy is {}",
             kinetic_energy + potential_energy
         );
-
-        let mut bond_energ = 0.0;
 
         kinetic_energy + potential_energy
     }
@@ -579,53 +698,247 @@ pub mod lennard_jones_simulations {
         )
     }
 
-    pub fn run_md_nve(
-        system: &mut Vec<Particle>,
+    pub fn run_md_nve_particles(
+        particles: &mut Vec<Particle>,
         number_of_steps: i32,
         dt: f64,
         box_length: f64,
         thermostat: &str,
     ) {
-        /*
-        We are now equipt to implement a NVE molecular dynamics simulations.
-        define time step and number of steps
-         */
         let mut final_summary = SimulationSummary { energy: 0.0 };
-
-        let lj_params_new = LJParameters {
-            epsilon: 1.0,
-            sigma: 4.0,
-            number_of_atoms: 2,
-        };
-
         let mut values: Vec<f32> = Vec::new();
 
-        // Compute the initial total energy of the system
-        let initial_energy = compute_total_energy_and_print(system, box_length);
-        // Loop over the total system for number_of_steps
-        for i in 0..number_of_steps {
-            // update periodic boundary conditions
-            pbc_update(system, box_length);
-            // update velocities using the verlet format
-            run_verlet_update_nve(system, 0.05, box_length);
-            let dof = 3 * system.len().saturating_sub(3);
-            let system_temperature = compute_temperature(system, dof);
-            println!("The temperature of the system is {}", system_temperature);
+        // --- initial forces and energy ---
+        compute_forces_particles(particles, box_length);
 
-            if thermostat == "berendsen" {
-                apply_thermostat_berendsen(system, 300.0, 0.1, 0.05);
-            } else {
-                apply_thermostat(system, 300.0);
+        let mut kinetic_energy = 0.0;
+        for p in particles.iter() {
+            kinetic_energy += 0.5 * p.mass * p.velocity.norm_squared();
+        }
+        let mut potential_energy = site_site_energy_calculation(particles, box_length);
+        let mut total_energy = kinetic_energy + potential_energy;
+
+        println!(
+        "[init] E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
+    );
+
+        // --- time integration loop ---
+        for _step in 0..number_of_steps {
+            // 1) position update (Verlet - half step)
+            for p in particles.iter_mut() {
+                p.update_position_verlet(dt);
             }
-            let total_energy = compute_total_energy_and_print(system, box_length);
-            // update the summary
 
+            // 2) PBC
+            pbc_update(particles, box_length);
+
+            // 3) recompute forces (LJ)
+            compute_forces_particles(particles, box_length);
+
+            // 4) velocity update (Verlet - second half step)
+            for p in particles.iter_mut() {
+                let a_new = p.force / p.mass;
+                p.update_velocity_verlet(a_new, dt);
+            }
+
+            // 5) measure temperature
+            let dof = 3 * particles.len().saturating_sub(3);
+            let system_temperature = compute_temperature_particles(&particles, dof);
+            println!("T = {system_temperature:.4}");
+
+            // 6) thermostat (currently: only Berendsen supported here)
+            if thermostat == "berendsen" {
+                apply_thermostat_berendsen_particles(particles, 300.0, 0.1, dt);
+            }
+
+            // 7) recompute energy
+            kinetic_energy = 0.0;
+            for p in particles.iter() {
+                kinetic_energy += 0.5 * p.mass * p.velocity.norm_squared();
+            }
+            potential_energy = site_site_energy_calculation(particles, box_length);
+            total_energy = kinetic_energy + potential_energy;
+
+            final_summary.energy = total_energy;
+            values.push(total_energy as f32);
+        }
+
+        // Optional: your running-average helper
+        compute_average_val(&mut values, 2, number_of_steps as u64);
+    }
+
+    pub fn run_md_nve_systems(
+        systems: &mut Vec<System>,
+        number_of_steps: i32,
+        dt: f64,
+        box_length: f64,
+        thermostat: &str,
+    ) {
+        let mut final_summary = SimulationSummary { energy: 0.0 };
+        let mut values: Vec<f32> = Vec::new();
+
+        // --- initial forces and energy ---
+        // bonded forces
+        for sys in systems.iter_mut() {
+            compute_forces_system(&mut sys.atoms, &sys.bonds, box_length);
+        }
+
+        // initial energy over all systems
+        let mut kinetic_energy = 0.0;
+        let mut potential_energy = 0.0;
+
+        for sys in systems.iter_mut() {
+            for a in sys.atoms.iter() {
+                kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
+            }
+            potential_energy += site_site_energy_calculation(&mut sys.atoms, box_length);
+        }
+
+        let mut total_energy = kinetic_energy + potential_energy;
+        println!(
+        "[init systems] E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
+    );
+
+        // --- time integration loop ---
+        for _step in 0..number_of_steps {
+            // For each system independently
+            for sys in systems.iter_mut() {
+                // 1) position update (Verlet - half step)
+                for a in sys.atoms.iter_mut() {
+                    a.update_position_verlet(dt);
+                }
+
+                // 2) PBC
+                pbc_update(&mut sys.atoms, box_length);
+
+                // 3) recompute forces (bonded; you can add LJ here too if you want)
+                compute_forces_system(&mut sys.atoms, &sys.bonds, box_length);
+
+                // 4) velocity update (Verlet - second half step)
+                for a in sys.atoms.iter_mut() {
+                    let a_new = a.force / a.mass;
+                    a.update_velocity_verlet(a_new, dt);
+                }
+
+                // 5) thermostat per system (optional)
+                let dof = 3 * sys.atoms.len().saturating_sub(3);
+                let system_temperature = compute_temperature_particles(&sys.atoms, dof);
+                println!("System T = {system_temperature:.4}");
+
+                if thermostat == "berendsen" {
+                    apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
+                }
+            }
+
+            // 6) recompute global energy after this step
+            kinetic_energy = 0.0;
+            potential_energy = 0.0;
+
+            for sys in systems.iter_mut() {
+                for a in sys.atoms.iter() {
+                    kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
+                }
+                potential_energy += site_site_energy_calculation(&mut sys.atoms, box_length);
+            }
+
+            total_energy = kinetic_energy + potential_energy;
             final_summary.energy = total_energy;
             values.push(total_energy as f32);
         }
 
         compute_average_val(&mut values, 2, number_of_steps as u64);
     }
+
+    pub fn run_md_nve(
+        state: &mut InitOutput,
+        number_of_steps: i32,
+        dt: f64,
+        box_length: f64,
+        thermostat: &str,
+    ) {
+        match state {
+            InitOutput::Particles(particles) => {
+                run_md_nve_particles(particles, number_of_steps, dt, box_length, thermostat);
+            }
+            InitOutput::Systems(systems) => {
+                run_md_nve_systems(systems, number_of_steps, dt, box_length, thermostat);
+            }
+        }
+    }
+
+    //pub fn run_md_nve(
+    //    state: &mut InitOutput,
+    //    number_of_steps: i32,
+    //    dt: f64,
+    //    box_length: f64,
+    //    thermostat: &str,
+    //) {
+    //    /*
+    //    We are now equipt to implement a NVE molecular dynamics simulations.
+    //    define time step and number of steps
+    //     */
+    //    let mut final_summary = SimulationSummary { energy: 0.0 };
+    //
+    //    let lj_params_new = LJParameters {
+    //        epsilon: 1.0,
+    //        sigma: 4.0,
+    //        number_of_atoms: 2,
+    //    };
+    //
+    //    let mut values: Vec<f32> = Vec::new();
+    //
+    //    // Compute the initial total energy of the system
+    //    let initial_energy = compute_total_energy_and_print(state, box_length);
+    //    // Loop over the total system for number_of_steps
+    //    for i in 0..number_of_steps {
+    //        // update periodic boundary conditions
+    //
+    //        match state {
+    //            // In the case we have a system of particles
+    //            InitOutput::Particles(particles) => {
+    //                pbc_update(particles, box_length);
+    //                // update velocities using the verlet format
+    //                run_verlet_update_nve(state, 0.05, box_length);
+    //                let dof = 3 * particles.len().saturating_sub(3);
+    //                let system_temperature = compute_temperature(state, dof);
+    //                println!("The temperature of the system is {}", system_temperature);
+    //
+    //                if thermostat == "berendsen" {
+    //                    apply_thermostat_berendsen(state, 300.0, 0.1, 0.05);
+    //                } else {
+    //                    apply_thermostat(state, 300.0);
+    //                }
+    //                let total_energy = compute_total_energy_and_print(state, box_length);
+    //                // update the summary
+    //
+    //                final_summary.energy = total_energy;
+    //                values.push(total_energy as f32);
+    //            } //compute_average_val(&mut values, 2, number_of_steps as u64);
+    //
+    //            InitOutput::Systems(systems) => {
+    //                for sys in systems.iter_mut() {
+    //                    pbc_update(&mut sys.atoms, box_length);
+    //                    // update velocities using the verlet format
+    //                    run_verlet_update_nve(state, 0.05, box_length);
+    //                    let dof = 3 * sys.atoms.len().saturating_sub(3);
+    //                    let system_temperature = compute_temperature(state, dof);
+    //                    println!("The temperature of the system is {}", system_temperature);
+    //
+    //                    if thermostat == "berendsen" {
+    //                        apply_thermostat_berendsen(state, 300.0, 0.1, 0.05);
+    //                    } else {
+    //                        apply_thermostat(state, 300.0);
+    //                    }
+    //                    let total_energy = compute_total_energy_and_print(state, box_length);
+    //                    // update the summary
+    //
+    //                    final_summary.energy = total_energy;
+    //                    values.push(total_energy as f32);
+    //                } //compute_average_val(&mut values, 2, number_of_steps as u64);
+    //            }
+    //        }
+    //    }
+    //}
 }
 
 pub mod general {
@@ -701,12 +1014,12 @@ mod tests {
         // Define the new simulation for nve
         let mut new_simulation_md =
             match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
-                10, 300.0, 30.0, 10.0, 10.0,
+                10, 300.0, 30.0, 10.0, 10.0, false,
             ) {
                 // How to handle errors - we are returning a result or a string
                 Ok(atoms) => atoms,
                 Err(e) => {
-                    eprintln!("Failed to create atoms: {}", e); // Log the error
+                    eprintln!("Failed to create atoms: {}", e); //Log the error
                     return; // Exit early or handle the error as needed
                 }
             };
