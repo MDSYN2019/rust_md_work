@@ -151,6 +151,24 @@ pub mod lennard_jones_simulations {
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
 
+    #[derive(Clone, Debug)]
+    pub struct ThermostatOptions {
+        pub target_temperature: f64,
+        pub relaxation_time: f64,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct BarostatOptions {
+        pub target_pressure: f64,
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum Ensemble {
+        Nve,
+        Nvt(ThermostatOptions),
+        Npt(BarostatOptions),
+    }
+
     #[derive(Clone)]
     pub struct LJParameters {
         // lennard jones parameters and the number of atoms that we have of that parameter
@@ -310,28 +328,7 @@ pub mod lennard_jones_simulations {
     }
 
     pub fn run_verlet_update_nve(particles: &mut Vec<Particle>, dt: f64, box_length: f64) -> () {
-        /*
-        Update the position and velocity of the particle using the verlet scheme
-         */
-        for particle in particles.iter_mut() {
-            particle.update_position_verlet(dt);
-        }
-        pbc_update(particles, box_length);
-        compute_forces(particles, box_length);
-
-        for particle in particles.iter_mut() {
-            println!(
-                "The original position and velocity is {:?} and {:?} ",
-                particle.position, particle.velocity
-            );
-            let a_new = particle.force / particle.mass;
-            particle.update_velocity_verlet(a_new, dt);
-
-            println!(
-                "After a iteration step, the position and velocity is {:?} and {:?} ",
-                particle.position, particle.velocity
-            );
-        }
+        integrate::verlet_step(particles, dt, box_length);
     }
 
     pub fn compute_forces(particles: &mut Vec<Particle>, box_length: f64) {
@@ -398,7 +395,10 @@ pub mod lennard_jones_simulations {
         (2.0 / 3.0) * (total_kinetic_energy / num_particles)
     }
 
-    pub fn apply_thermostat(particles: &mut Vec<Particle>, target_temperature: f64) {
+    pub fn apply_thermostat_velocity_rescale(
+        particles: &mut Vec<Particle>,
+        target_temperature: f64,
+    ) {
         let current_temperature = compute_temperature(particles);
         if current_temperature == 0.0 {
             return; // Avoid division by zero
@@ -416,6 +416,10 @@ pub mod lennard_jones_simulations {
             "Applied thermostat: Current Temp = {:.2}, Target Temp = {:.2}, Scaling Factor = {:.2}",
             current_temperature, target_temperature, lambda
         );
+    }
+
+    pub fn apply_thermostat(particles: &mut Vec<Particle>, target_temperature: f64) {
+        apply_thermostat_velocity_rescale(particles, target_temperature);
     }
 
     pub fn apply_thermostat_berendsen(particles: &mut Vec<Particle>, target_temperature: f64) {}
@@ -457,41 +461,91 @@ pub mod lennard_jones_simulations {
         )
     }
 
-    pub fn run_md_nve(number_of_steps: i32, dt: f64, box_length: f64) {
-        /*
-        We are now equipt to implement a NVE molecular dynamics simulations.
-        define time step and number of steps
-         */
-
-        let lj_params_new = LJParameters {
-            epsilon: 1.0,
-            sigma: 4.0,
-            number_of_atoms: 2,
+    pub mod integrate {
+        use super::{
+            apply_thermostat_velocity_rescale, compute_forces, pbc_update, Particle,
+            ThermostatOptions,
         };
 
+        pub fn verlet_step(particles: &mut Vec<Particle>, dt: f64, box_length: f64) {
+            for particle in particles.iter_mut() {
+                particle.update_position_verlet(dt);
+            }
+            pbc_update(particles, box_length);
+            compute_forces(particles, box_length);
+
+            for particle in particles.iter_mut() {
+                let a_new = particle.force / particle.mass;
+                particle.update_velocity_verlet(a_new, dt);
+            }
+        }
+
+        pub fn verlet_step_nvt(
+            particles: &mut Vec<Particle>,
+            dt: f64,
+            box_length: f64,
+            thermostat_options: &ThermostatOptions,
+        ) {
+            verlet_step(particles, dt, box_length);
+            apply_thermostat_velocity_rescale(particles, thermostat_options.target_temperature);
+        }
+    }
+
+    pub fn run_md(ensemble: Ensemble, number_of_steps: i32, dt: f64, box_length: f64) {
         let mut new_simulation_md =
             match create_atoms_with_set_positions_and_velocities(3, 300.0, 30.0, 10.0, 10.0) {
-                // How to handle errors - we are returning a result or a string
                 Ok(atoms) => atoms,
                 Err(e) => {
-                    eprintln!("Failed to create atoms: {}", e); // Log the error
-                    return; // Exit early or handle the error as needed
+                    eprintln!("Failed to create atoms: {}", e);
+                    return;
                 }
             };
 
-        // Compute the initial total energy of the system
-        let initial_energy = compute_total_energy_and_print(&new_simulation_md, box_length);
-        // Loop over the total system for number_of_steps
-        for i in 0..number_of_steps {
-            pbc_update(&mut new_simulation_md, box_length);
-            // update velocities using the verlet format
-            run_verlet_update_nve(&mut new_simulation_md, 0.05, box_length);
-            let temp = compute_temperature(&mut new_simulation_md);
-            println!("The temperature of the system is {}", temp);
-            apply_thermostat(&mut new_simulation_md, 30.0);
+        let _initial_energy = compute_total_energy_and_print(&new_simulation_md, box_length);
 
-            let total_energy = compute_total_energy_and_print(&new_simulation_md, box_length);
+        for step in 0..number_of_steps {
+            match &ensemble {
+                Ensemble::Nve => integrate::verlet_step(&mut new_simulation_md, dt, box_length),
+                Ensemble::Nvt(options) => {
+                    integrate::verlet_step_nvt(&mut new_simulation_md, dt, box_length, options)
+                }
+                Ensemble::Npt(_) => integrate::verlet_step(&mut new_simulation_md, dt, box_length),
+            }
+
+            let temp = compute_temperature(&mut new_simulation_md);
+            println!("Step {} temperature: {}", step, temp);
+
+            let _total_energy = compute_total_energy_and_print(&new_simulation_md, box_length);
         }
+    }
+
+    pub fn run_md_with_ensemble(
+        ensemble: Ensemble,
+        number_of_steps: i32,
+        dt: f64,
+        box_length: f64,
+    ) {
+        run_md(ensemble, number_of_steps, dt, box_length);
+    }
+
+    pub fn smoke_test_nvt() -> bool {
+        let mut particles =
+            match create_atoms_with_set_positions_and_velocities(2, 150.0, 10.0, 5.0, 5.0) {
+                Ok(atoms) => atoms,
+                Err(_) => return false,
+            };
+
+        let thermostat = ThermostatOptions {
+            target_temperature: 50.0,
+            relaxation_time: 1.0,
+        };
+
+        for _ in 0..5 {
+            integrate::verlet_step_nvt(&mut particles, 0.01, 5.0, &thermostat);
+        }
+
+        let final_temp = compute_temperature(&mut particles);
+        (final_temp - thermostat.target_temperature).abs() < thermostat.target_temperature * 0.2
     }
 }
 
@@ -564,5 +618,10 @@ mod tests {
             sigma: 1.0,
             number_of_atoms: 3,
         };
+    }
+
+    #[test]
+    fn smoke_test_nvt_keeps_temperature_close() {
+        assert!(lennard_jones_simulations::smoke_test_nvt());
     }
 }
