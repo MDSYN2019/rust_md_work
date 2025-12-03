@@ -20,7 +20,7 @@ and neutrons in nuclei, and nuclear matter.
 #![allow(unused_variables)] // ensure that unused variables do not cause an error when compiling this program
                             // relax compiler warnings while working through ideas
 
-use sang_md::lennard_jones_simulations::{self};
+use sang_md::lennard_jones_simulations::{self, Ensemble, ThermostatOptions};
 
 fn main() {
     // First let's define the force field for the particles in the system
@@ -64,5 +64,10 @@ fn main() {
     //
     //// apply the thermostat for the system
     //lennard_jones_simulations::apply_thermostat(&mut new_simulation_md_clone, 30.0);
-    lennard_jones_simulations::run_md_nve(30, 0.5, 10.0);
+    let ensemble = Ensemble::Nvt(ThermostatOptions {
+        target_temperature: 30.0,
+        relaxation_time: 1.0,
+    });
+
+    lennard_jones_simulations::run_md_with_ensemble(ensemble, 30, 0.5, 10.0);
 }
