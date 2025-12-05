@@ -361,6 +361,8 @@ pub mod lennard_jones_simulations {
         }
     }
 
+    pub fn implement_shake() -> () {}
+
     pub fn run_verlet_update_nve(state: &mut InitOutput, dt: f64, box_length: f64) -> () {
         /*
         Update the position and velocity of the particle using the verlet scheme

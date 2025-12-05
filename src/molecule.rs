@@ -113,6 +113,29 @@ pub fn compute_bond_force(atoms: &mut Vec<Particle>, bond: &Bond, box_length: f6
     0.5 * bond.k * dr * dr // return the bond energy
 }
 
+pub fn compute_electostatic_bond_short_force(atoms: &mut Vec<Particle>, box_length: f64) -> f64 {
+    /*
+    Compute the short range real space component of the electrostatic interaction
+
+    https://computecanada.github.io/molmodsim-md-theory-lesson-novice/06-electrostatics/index.html - useful link
+
+    Computing Coulomb potenials is often the most time consuming part of any MD simulation
+
+     */
+    let mut total_short_range_potential = 0.0;
+    let k_2 = 1.0; // This will be changed to the permittivity of free space
+    let e_0 = 1.0;
+    for i in 0..atoms.len() {
+        for j in (i + 1)..atoms.len() {
+            // This needs to be properly represent the coloumbing potential - this is a crappy dummy at the moment
+            total_short_range_potential += ((atoms[i].charge * atoms[j].charge)
+                / (4.0 * 3.14 * e_0))
+                / (atoms[0].position - atoms[1].position).norm()
+        }
+    }
+    total_short_range_potential
+}
+
 pub fn apply_bonded_forces_and_energy(
     atoms: &mut Vec<Particle>,
     bonds: &[Bond],
