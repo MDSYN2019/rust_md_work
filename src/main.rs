@@ -38,15 +38,14 @@ fn main() {
             }
         };
 
-    lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 30, 0.5, 10.0, "None");
+    lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 30, 0.5, 10.0, "berendsen");
 
+    // --------------------------------------------------------------------------------------//
     // Create a h2 system
-    let mut h2 = molecule::make_h2_system();
-    let mut systems = molecule::create_systems(&h2, 2);
-
-    println!("We have the following atoms {:?}", h2.atoms[0]);
-    println!("We have the following atoms {:?}", h2.atoms[1]);
-
+    let h2 = molecule::make_h2_system();
+    let mut systems_vec = molecule::create_systems(&h2, 2);
+    // assign positions and velocities to the positions
+    lennard_jones_simulations::set_molecular_positions_and_velocities(&mut systems_vec, 300.0);
     // need to modify this - need to implement the create_atoms_with_set_positions_and_velocities to work with molecules here as well
-    lennard_jones_simulations::run_md_nve(&mut systems, 30, 0.5, 10.0, "None");
+    lennard_jones_simulations::run_md_nve(&mut systems_vec, 30, 0.5, 10.0, "berendsen");
 }

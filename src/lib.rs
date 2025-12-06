@@ -290,6 +290,38 @@ pub mod lennard_jones_simulations {
         total_energy
     }
 
+    pub fn set_molecular_positions_and_velocities(system_mol: &mut InitOutput, temp: f64) -> () {
+        let mut rng = rand::rng();
+        // loop over each moleucle
+
+        // Create a normal distribution with mean = 0, std = sigma
+
+        match system_mol {
+            InitOutput::Particles(particles) => {
+                for index in 0..particles.len() {
+                    // Each element is a System
+                    particles[index].velocity[0] = rng.random_range(-1.0..1.0);
+                    particles[index].velocity[1] = rng.random_range(-1.0..1.0);
+                    particles[index].velocity[2] = rng.random_range(-1.0..1.0);
+                }
+            }
+            InitOutput::Systems(systems) => {
+                for sys in systems.iter_mut() {
+                    // Each element is a System
+                    // loop over each atom
+                    for atom in sys.atoms.iter_mut() {
+                        let sigma_mb = (temp / atom.mass).sqrt(); // 1.0 needs to be replaced with mass
+                        let normal = Normal::new(0.0, sigma_mb).unwrap();
+
+                        atom.velocity[0] = normal.sample(&mut rng);
+                        atom.velocity[1] = normal.sample(&mut rng);
+                        atom.velocity[2] = normal.sample(&mut rng);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn create_atoms_with_set_positions_and_velocities(
         number_of_atoms: i64,
         temp: f64,
