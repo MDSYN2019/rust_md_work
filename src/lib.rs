@@ -66,9 +66,9 @@ Each `Particle` struct contains:
 
 */
 extern crate assert_type_eq;
-mod error;
-mod lj_parameters;
-mod molecule;
+pub mod error;
+pub mod lj_parameters;
+pub mod molecule;
 
 // Use when importing the finished minimization modulexo
 //use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
@@ -163,12 +163,12 @@ pub mod lennard_jones_simulations {
     use rand_distr::{Distribution, Normal};
 
     // importing bonds
-    use molecule::apply_bonded_forces_and_energy;
-    use molecule::make_h2_system;
-    use molecule::Bond;
-    use molecule::System;
+    use crate::molecule::apply_bonded_forces_and_energy;
+    use crate::molecule::make_h2_system;
+    use crate::molecule::Bond;
+    use crate::molecule::System;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct LJParameters {
         // lennard jones parameters and the number of atoms that we have of that parameter
         pub epsilon: f64,
@@ -176,7 +176,7 @@ pub mod lennard_jones_simulations {
         pub number_of_atoms: i32,
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct Particle {
         pub id: usize,
         pub position: Vector3<f64>,
@@ -798,7 +798,7 @@ pub mod lennard_jones_simulations {
 
         let mut total_energy = kinetic_energy + potential_energy;
         println!(
-        "[init systems] E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
+        "[init systems] particle  E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
     );
 
         // --- time integration loop ---

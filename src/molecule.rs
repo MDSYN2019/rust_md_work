@@ -9,8 +9,10 @@ x`---
 
 
  */
+use crate::lennard_jones_simulations::InitOutput;
 use crate::lennard_jones_simulations::LJParameters;
 use crate::lennard_jones_simulations::Particle;
+
 use nalgebra::Vector3;
 use std::collections::{HashMap, HashSet};
 
@@ -35,7 +37,7 @@ pub struct Atom {
     pub charge: f64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Bond {
     pub atom1: usize,
     pub atom2: usize,
@@ -78,7 +80,7 @@ pub struct MoleculeTemplate {
     pub exclusion_1_4_scale: Option<f64>, // (i, j, k, k_theta, theta_0)
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct System {
     pub atoms: Vec<Particle>,
     pub bonds: Vec<Bond>,
@@ -170,7 +172,7 @@ pub fn make_h2_system() -> System {
         Particle {
             id: 0,
             position: Vector3::new(-x, 0.0, 0.0),
-            velocity: Vector3::new(0.0, 0.0, 0.0),
+            velocity: Vector3::new(1.0, 1.0, 1.0),
             force: Vector3::zeros(),
             atom_type: 0.0,
             mass: 1.0,
@@ -185,7 +187,7 @@ pub fn make_h2_system() -> System {
         Particle {
             id: 1,
             position: Vector3::new(x, 0.0, 0.0),
-            velocity: Vector3::new(0.0, 0.0, 0.0),
+            velocity: Vector3::new(1.0, -1.0, 1.0),
             force: Vector3::zeros(),
             atom_type: 0.0,
             mass: 1.0,
@@ -211,6 +213,20 @@ pub fn make_h2_system() -> System {
     }];
 
     System { atoms, bonds }
+}
+
+pub fn create_systems(system: &System, number_of_molecules: i32) -> InitOutput {
+    /*
+    Create n number of particles
+     */
+    let mut molecules: Vec<System> = Vec::new();
+
+    for _ in 0..number_of_molecules {
+        molecules.push(system.clone());
+    }
+
+    // output as the enum we want which will be a valid input to run_md_nve
+    InitOutput::Systems(molecules)
 }
 
 #[cfg(test)]
