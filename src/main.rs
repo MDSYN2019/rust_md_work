@@ -20,49 +20,32 @@ and neutrons in nuclei, and nuclear matter.
 #![allow(unused_variables)] // ensure that unused variables do not cause an error when compiling this program
                             // relax compiler warnings while working through ideas
 
-use sang_md::lennard_jones_simulations::{self};
+use sang_md::lennard_jones_simulations;
+use sang_md::molecule;
 
 fn main() {
-    // First let's define the force field for the particles in the system
-    //let lj_params_new = lennard_jones_simulations::LJParameters {
-    //    epsilon: 1.0,
-    //    sigma: 4.0,
-    //    number_of_atoms: 2,
-    //};
-    //
-    //let mut new_simulation_md =
-    //    match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
-    //        3, 10.0, 10.0, 10.0, 10.0,
-    //    ) {
-    //        // How to handle errors - we are returning a result or a string
-    //        Ok(atoms) => atoms,
-    //        Err(e) => {
-    //            eprintln!("Failed to create atoms: {}", e); // Log the error
-    //            return; // Exit early or handle the error as needed
-    //        }
-    //    };
-    //
-    //let mut new_simulation_md_clone = new_simulation_md.clone();
-    //let mut updated_sim = lennard_jones_simulations::pbc_update(&mut new_simulation_md, 20.0);
-    //
-    //// Compute the forces
-    //lennard_jones_simulations::compute_forces(
-    //    &mut new_simulation_md,
-    //    lj_params_new.epsilon,
-    //    lj_params_new.sigma,
-    //);
-    //// Running verlet update on the particles
-    //lennard_jones_simulations::run_verlet_update(
-    //    &mut new_simulation_md,
-    //    Vector3::new(0.01, 0.01, 0.01),
-    //    0.05,
-    //);
-    //
-    //// compute the temperature of the system
-    //let temp = lennard_jones_simulations::compute_temperature(&mut new_simulation_md_clone);
-    //println!("The current temperature of the toy system is {}", temp);
-    //
-    //// apply the thermostat for the system
-    //lennard_jones_simulations::apply_thermostat(&mut new_simulation_md_clone, 30.0);
-    lennard_jones_simulations::run_md_nve(30, 0.5, 10.0);
+    // main code for running molecular dynamics simulations - version 2
+    // create a new system
+    let mut new_simulation_md =
+        match lennard_jones_simulations::create_atoms_with_set_positions_and_velocities(
+            3, 300.0, 30.0, 10.0, 10.0, false,
+        ) {
+            // How to handle errors - we are returning a result or a string
+            Ok(atoms) => atoms,
+            Err(e) => {
+                eprintln!("Failed to create atoms: {}", e); // Log the error
+                return; // Exit early or handle the error as needed
+            }
+        };
+
+    lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 30, 0.5, 10.0, "berendsen");
+
+    // --------------------------------------------------------------------------------------//
+    // Create a h2 system
+    let h2 = molecule::make_h2_system();
+    let mut systems_vec = molecule::create_systems(&h2, 2);
+    // assign positions and velocities to the positions
+    lennard_jones_simulations::set_molecular_positions_and_velocities(&mut systems_vec, 300.0);
+    // need to modify this - need to implement the create_atoms_with_set_positions_and_velocities to work with molecules here as well
+    lennard_jones_simulations::run_md_nve(&mut systems_vec, 30, 0.5, 10.0, "berendsen");
 }
