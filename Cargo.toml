@@ -48,6 +48,7 @@ argmin = "0.10.0"
 
 rustfft = "6"
 num-complex="0.4"
+mpi = "0.8.0"
 # When a panic occurs, the program starts unwinding, which means Rust
 # walks back up the stack and cleans up the data from each function.
 

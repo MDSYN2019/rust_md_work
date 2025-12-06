@@ -4,7 +4,16 @@ used to find nearby local minimum of potential energy surface
 
 The idea is to remove steric clashes, highly strained geometries,
 or unrealistic bond lengths/angbles before running time-evolution simulations
-*/
+
+---
+
+1. start with r = 0.8 σ (too close, huge repulsion)
+2. compute F(r) = -dU/dr
+3. update r_new = r_old + α F
+4. repeat until |F| < tol
+
+
+ */
 
 use argmin::prelude::*;
 use argmin::solver::quasinewton::BFGS;
