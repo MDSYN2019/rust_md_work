@@ -239,14 +239,14 @@ pub mod lennard_jones_simulations {
             //self.position[2] += self.velocity[2] * dt + 0.5 * acceleration[2] * dt * dt;
         }
 
-        fn update_velocity_verlet(&mut self, a_new: Vector3<f64>, dt: f64) {
+        fn update_velocity_verlet(&mut self, accelerations: Vector3<f64>, dt: f64) {
             /*
             Verlet scheme to update the velocity
              */
             //self.velocity[0] += 0.5 * (old_acceleration[0] + new_acceleration[0]) * dt;
             //self.velocity[1] += 0.5 * (old_acceleration[1] + new_acceleration[1]) * dt;
             //self.velocity[2] += 0.5 * (old_acceleration[2] + new_acceleration[2]) * dt;
-            self.velocity += 0.5 * a_new * dt;
+            self.velocity += 0.5 * accelerations * dt;
         }
     }
 
@@ -556,7 +556,7 @@ pub mod lennard_jones_simulations {
         match state {
             InitOutput::Particles(particles) => {
                 // dof: subtract 3 to account for removing COM motion (classic MD trick)
-                let dof = 3 * particles.len().saturating_sub(3);
+                let dof = 3 * particles.len();
                 if dof == 0 {
                     return;
                 }
@@ -586,7 +586,7 @@ pub mod lennard_jones_simulations {
                         continue;
                     }
 
-                    let dof = 3 * natoms.saturating_sub(3);
+                    let dof = 3 * natoms;
                     if dof == 0 {
                         continue;
                     }
@@ -627,12 +627,13 @@ pub mod lennard_jones_simulations {
         relaxation time
 
          */
-        let dof = 3 * particles.len().saturating_sub(3);
+        let dof = 3 * particles.len();
         let current_temperature = compute_temperature_particles(particles, dof);
 
-        //if tau <= 0.0 || dt <= 0.0 || current_temperature <= 0.0 || target_temperature <= 0.0 {
-        //    return 1.0;
-        //}
+        // Bail if parameters are nonsense or temperature is zero/negative
+        if tau <= 0.0 || dt <= 0.0 || current_temperature <= 0.0 || target_temperature <= 0.0 {
+            return;
+        }
 
         // Discrete Berendsen: T' = T * (1 + (dt/tau)(T_0/T - 1))
         // Velocitiea s scale as sqrt (T'/T)
@@ -759,9 +760,28 @@ pub mod lennard_jones_simulations {
         // --- time integration loop ---
         for _step in 0..number_of_steps {
             // 1) position update (Verlet - half step)
-            for p in particles.iter_mut() {
-                p.update_position_verlet(dt);
+
+            let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(particles.len());
+
+            for a in particles.iter() {
+                a_old.push(a.force / a.mass);
             }
+
+            // 1) position update (Verlet - half step)
+
+            for (atom, a_o) in particles.iter_mut().zip(a_old.iter()) {
+                atom.velocity += 0.5 * a_o * dt;
+            }
+
+            // 2) drift position
+
+            for atom in particles.iter_mut() {
+                atom.position += atom.velocity * dt;
+            }
+
+            //for p in particles.iter_mut() {
+            //    p.update_position_verlet(dt);
+            //}
 
             // 2) PBC
             pbc_update(particles, box_length);
@@ -772,11 +792,12 @@ pub mod lennard_jones_simulations {
             // 4) velocity update (Verlet - second half step)
             for p in particles.iter_mut() {
                 let a_new = p.force / p.mass;
+                // where we do computing of the verlet
                 p.update_velocity_verlet(a_new, dt);
             }
 
             // 5) measure temperature
-            let dof = 3 * particles.len().saturating_sub(3);
+            let dof = 3 * particles.len();
             let system_temperature = compute_temperature_particles(&particles, dof);
             println!("T = {system_temperature:.4}");
 
@@ -822,6 +843,8 @@ pub mod lennard_jones_simulations {
         let mut potential_energy = 0.0;
 
         for sys in systems.iter_mut() {
+            // loop over each molecule (system) in the simualtion
+
             for a in sys.atoms.iter() {
                 kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
             }
@@ -831,33 +854,46 @@ pub mod lennard_jones_simulations {
         let mut total_energy = kinetic_energy + potential_energy;
         println!(
         "[init systems] particle  E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
-    );
+	);
 
         // --- time integration loop ---
         for _step in 0..number_of_steps {
             // For each system independently
             for sys in systems.iter_mut() {
-                // 1) position update (Verlet - half step)
-                for a in sys.atoms.iter_mut() {
-                    a.update_position_verlet(dt);
+                // Create place to store the old accelerations
+                let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(sys.atoms.len());
+
+                for a in sys.atoms.iter() {
+                    a_old.push(a.force / a.mass);
                 }
 
-                // 2) PBC
+                // 1) position update (Verlet - half step)
+
+                for (atom, a_o) in sys.atoms.iter_mut().zip(a_old.iter()) {
+                    atom.velocity += 0.5 * a_o * dt;
+                }
+
+                // 2) drift positions
+                for atom in sys.atoms.iter_mut() {
+                    atom.position += atom.velocity * dt;
+                }
+
+                // 3) PBC
                 pbc_update(&mut sys.atoms, box_length);
 
-                // 3) recompute forces (bonded; you can add LJ here too if you want)
+                // 4) recompute forces (bonded; you can add LJ here too if you want)
                 compute_forces_system(&mut sys.atoms, &sys.bonds, box_length);
 
-                // 4) velocity update (Verlet - second half step)
+                // 5) velocity update (Verlet - second half step)
                 for a in sys.atoms.iter_mut() {
                     let a_new = a.force / a.mass;
                     a.update_velocity_verlet(a_new, dt);
                 }
 
                 // 5) thermostat per system (optional)
-                let dof = 3 * sys.atoms.len().saturating_sub(3);
+                let dof = 3 * sys.atoms.len();
                 let system_temperature = compute_temperature_particles(&sys.atoms, dof);
-                println!("System T = {system_temperature:.4}");
+                println!("T = {system_temperature:.4}");
 
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
@@ -869,15 +905,19 @@ pub mod lennard_jones_simulations {
             potential_energy = 0.0;
 
             for sys in systems.iter_mut() {
+                // sum the kinetic energy component
                 for a in sys.atoms.iter() {
                     kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
                 }
+                // sum the potential energy component
                 potential_energy += site_site_energy_calculation(&mut sys.atoms, box_length);
             }
-
+            // compute the total energy
             total_energy = kinetic_energy + potential_energy;
             final_summary.energy = total_energy;
-            values.push(total_energy as f32);
+            values.push(total_energy as f32); // compute the total energy per timestep
+            println!("step {_step}: E_tot = {total_energy:.6}, E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}");
+            //println!("System T = {system_temperature:.4}");
         }
 
         compute_average_val(&mut values, 2, number_of_steps as u64);
@@ -975,37 +1015,6 @@ pub mod lennard_jones_simulations {
     //}
 }
 
-pub mod general {
-    pub struct GeneralStruct {
-        array: [u8; 64], // an array o
-        slice: [u8; 64], // an array o
-        string_entry: str,
-    }
-
-    impl GeneralStruct {
-        fn print_entry(&self) {
-            for entry in &self.slice {
-                println!("the entry in the slice is {}", entry);
-            }
-        }
-    }
-
-    fn print_loop(value: &Vec<i32>) {
-        let value_clone = value.clone(); // get the cloned value
-        for index in &value_clone {
-            println!("{} \n", index) // for each value referenced in the index, print out the value index
-        }
-    }
-
-    fn print_string(s: String) {
-        println!("print_String: {}", s);
-    }
-
-    fn print_str(s: &str) {
-        println!("print_str: {}", s);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1059,7 +1068,7 @@ mod tests {
             };
 
         lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 1000, 0.5, 10.0, "berendsen");
-        let dof = 3 * new_simulation_md.len().saturating_sub(3);
+        let dof = 3 * new_simulation_md.len();
         // compute the final temperature of the system
         let t = lennard_jones_simulations::compute_temperature(&mut new_simulation_md, dof);
         println!("Temperature is {}, and target is {}", t, t0);
