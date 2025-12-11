@@ -73,34 +73,11 @@ pub mod molecule;
 // Use when importing the finished minimization modulexo
 //use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
 
-pub mod tensors {
-    pub fn outer_product<T>(a: &[T], b: &[T], default_value: T) -> Vec<Vec<T>>
-    where
-        T: std::ops::Mul<Output = T> + Clone,
-        /*
-        The function takes two slices &[T] as input. Slices are references
-        to arrays or vectors, allowing you to work with portion of a collection,
-        to return a vector of vectors of type T
-         */
-    {
-        let mut result = vec![vec![default_value.clone(); b.len()]; a.len()];
-        for i in 0..a.len() {
-            for j in 0..b.len() {
-                result[i][j] = a[i].clone() * b[j].clone();
-            }
-        }
-        result
-    }
-}
-
-pub mod periodic_boundary_conditions {
+pub mod cell_subdivision {
 
     /*
-    How do we handle periodic boundaries and minimum image convention in a simulation program?
-
-    Define simulation box and write the necessary methods
-    to fix the coordiantes when the molecule has periodic boundary issues
-
+    Create the subcells required for efficiently computing the intermolecular interactions
+    within a certain radius cutoff rather than working with all the atoms in the system
      */
     use nalgebra::Vector3;
 
@@ -110,23 +87,61 @@ pub mod periodic_boundary_conditions {
         pub z_dimension: f64,
     }
 
+    pub struct MolecularCoordinates {
+        /*
+        struct to store information about each subdivsion of cells
+        */
+        pub center: Vector3<f64>,
+        pub length: Vector3<f64>,
+        pub index: Vector3<i64>,
+    }
+
     impl SimulationBox {
-        fn cell_subdivison(&self, n_cells: i64) -> () {
-            /*
+        //fn cell_subdivison(&self, n_cells: i64) -> f64 {
+        //    /*
+        //    Cell subdivsision provides a mean for organizing the information about atom positions
+        //    into a form that avoids most of the unnecessary work and reduces the computational effort to a
+        //    O(N_m) level.
+        //
+        //    Linked lists are used to associate atoms with the cells in which they reside at any given instant.
+        //     */
+        //
+        //    let box_size = Vector3::new(self.x_dimension, self.y_dimension, self.z_dimension);
+        //    let cell_n = box_size / (n_cells as f64);
+        //    cell_n
+        //}
 
-                Cell subdivsision provides a mean for organizing the information about atom positions
-            into a form that avoids most of the unnecessary work and reduces the computational effort to a
-            O(N_m) level.
+        pub fn create_subcells(&self, cell_n: i64) -> Vec<MolecularCoordinates> {
+            let mut cells: Vec<MolecularCoordinates> = Vec::new();
 
-            Linked lists are used to assocaite atoms with the cells in which they reside at any given instant.
+            // define the  'chunks' of which we want to divide the cells into
+            let x_length: f64 = self.x_dimension / cell_n as f64;
+            let y_length: f64 = self.y_dimension / cell_n as f64;
+            let z_length: f64 = self.z_dimension / cell_n as f64;
 
-                 */
+            for x in 0..cell_n {
+                for y in 0..cell_n {
+                    for z in 0..cell_n {
+                        let x_f = x as f64;
+                        let y_f = y as f64;
+                        let z_f = z as f64;
+                        let mut cell = MolecularCoordinates {
+                            center: Vector3::new(
+                                (x_f * x_length) + x_length / 2.0,
+                                (y_f * y_length) + y_length / 2.0,
+                                (z_f * z_length) + z_length / 2.0,
+                            ),
+                            length: Vector3::new(x_length / 2.0, y_length / 2.0, z_length / 2.0),
 
-            let box_size = Vector3::new(self.x_dimension, self.y_dimension, self.z_dimension);
-            let cell_size = box_size / (n_cells as f64);
+                            index: Vector3::new(x, y, z),
+                        };
+                        cells.push(cell);
+                    }
+                }
+            }
+            cells
         }
     }
-    pub struct MolecularCoordinates {}
 }
 
 #[inline]
@@ -278,8 +293,8 @@ pub mod lennard_jones_simulations {
                 // Using Lorentz-Bethelot mixing rules
                 let computed_sigma = (sigma_i + sigma_j) / 2.0;
                 let computed_epsilon = (epsilon_i + epsilon_j).sqrt();
-                let r_vec = particles[j].position - particles[i].position;
-                let r_vec_mic = minimum_image_convention(r_vec, box_length); // TODO - this needs to be fied
+                let r_vec = particles[j].position - particles[i].position; // We have already applied PBC to wrap the positions
+                let r_vec_mic = minimum_image_convention(r_vec, box_length); // minimum image convention is used for computing the true closest distance between the partcle i and j, through the images rather than take the longest distance from within the same image
                 let r = r_vec_mic.norm();
                 let potential = lennard_jones_potential(r, computed_sigma, computed_epsilon);
 
@@ -406,6 +421,9 @@ pub mod lennard_jones_simulations {
                 }
 
                 pbc_update(particles, box_length);
+
+                // TODO - apply minimum image and displacement
+
                 compute_forces_particles(particles, box_length);
 
                 for particle in particles.iter_mut() {
@@ -837,14 +855,11 @@ pub mod lennard_jones_simulations {
         for sys in systems.iter_mut() {
             compute_forces_system(&mut sys.atoms, &sys.bonds, box_length);
         }
-
         // initial energy over all systems
         let mut kinetic_energy = 0.0;
         let mut potential_energy = 0.0;
-
         for sys in systems.iter_mut() {
-            // loop over each molecule (system) in the simualtion
-
+            // loop over each molecule (system) in the simulations
             for a in sys.atoms.iter() {
                 kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
             }
