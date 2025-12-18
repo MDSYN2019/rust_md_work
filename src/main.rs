@@ -21,7 +21,7 @@ and neutrons in nuclei, and nuclear matter.
                             // relax compiler warnings while working through ideas
 
 use sang_md::lennard_jones_simulations;
-use sang_md::molecule;
+use sang_md::molecule::molecule;
 
 fn main() {
     // main code for running molecular dynamics simulations - version 2

@@ -66,9 +66,10 @@ Each `Particle` struct contains:
 
 */
 extern crate assert_type_eq;
+
 pub mod error;
-pub mod lj_parameters;
 pub mod molecule;
+pub mod parameters;
 
 // Use when importing the finished minimization modulexo
 //use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
@@ -169,8 +170,8 @@ fn safe_norm(x: f64) -> f64 {
 
 pub mod lennard_jones_simulations {
 
-    use super::*;
-    use crate::lj_parameters::lennard_jones_potential;
+    use super::*; //
+    use crate::parameters::lj_parameters::lennard_jones_potential;
     use error::compute_average_val;
     use nalgebra::{zero, Vector3};
     use rand::prelude::*;
@@ -178,10 +179,10 @@ pub mod lennard_jones_simulations {
     use rand_distr::{Distribution, Normal};
 
     // importing bonds
-    use crate::molecule::apply_bonded_forces_and_energy;
-    use crate::molecule::make_h2_system;
-    use crate::molecule::Bond;
-    use crate::molecule::System;
+    use crate::molecule::molecule::apply_bonded_forces_and_energy;
+    use crate::molecule::molecule::make_h2_system;
+    use crate::molecule::molecule::Bond;
+    use crate::molecule::molecule::System;
 
     #[derive(Clone, Debug)]
     pub struct LJParameters {
