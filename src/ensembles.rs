@@ -19,5 +19,25 @@ pub mod ensembles {
         Npt(BarostatOptions),
     }
 
-    impl Ensemble {}
+    impl Ensemble {
+        pub fn md_thermoostat_andersen() -> () {
+            /*
+
+            // basing this from frenkel and smit
+                [Initialize system]
+                [Compute forces and energy]
+
+                    while t < t_max  do
+
+                    switch = 1
+                    integrate-A -- propagates half-step
+                    F and E
+                switch = 2
+                    integrate A -- propagates second-half-step
+
+                    t = t + dt
+                    sameple -- sample observables
+                     */
+        }
+    }
 }
