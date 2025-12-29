@@ -74,13 +74,51 @@ pub mod parameters;
 // Use when importing the finished minimization modulexo
 //use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
 
+#[inline]
+pub fn lennard_jones_force_scalar(r: f64, sigma: f64, epsilon: f64) -> f64 {
+    // F(r) magnitude along r-hat; positive = repulsive
+    // d/dr 4ε[(σ/r)^12 - (σ/r)^6]  =>  24ε [2(σ^12/r^13) - (σ^6/r^7)]
+    if r <= 0.0 {
+        return 0.0;
+    }
+    let sr = sigma / r;
+    let sr2 = sr * sr;
+    let sr6 = sr2 * sr2 * sr2;
+    let sr12 = sr6 * sr6;
+    24.0 * epsilon * (2.0 * sr12 - sr6) / r
+}
+
+#[inline]
+fn safe_norm(x: f64) -> f64 {
+    if x < 1e-12 {
+        1e-12
+    } else {
+        x
+    }
+}
+
 pub mod cell_subdivision {
 
+    use super::*; //
+    use error::compute_average_val;
+    use nalgebra::{zero, Vector3};
+    // importing bonds
+    use crate::lennard_jones_simulations::InitOutput;
+    use crate::lennard_jones_simulations::Particle;
+    use crate::molecule::molecule::apply_bonded_forces_and_energy;
+    use crate::molecule::molecule::make_h2_system;
+    use crate::molecule::molecule::Bond;
+    use crate::molecule::molecule::System;
     /*
     Create the subcells required for efficiently computing the intermolecular interactions
     within a certain radius cutoff rather than working with all the atoms in the system
      */
-    use nalgebra::Vector3;
+
+    fn distance_to(this: &Vector3<f64>, other: &Vector3<f64>) -> f64 {
+        // Calculate the distance using the Euclidean distance formula
+        ((this.x - other.x).powi(2) + (this.y - other.y).powi(2) + (this.z - other.z).powi(2))
+            .sqrt()
+    }
 
     pub struct SimulationBox {
         pub x_dimension: f64,
@@ -93,14 +131,15 @@ pub mod cell_subdivision {
         struct to store information about each subdivsion of cells
         */
         pub center: Vector3<f64>,
-        pub length: Vector3<f64>,
+        pub length: f64,
         pub index: Vector3<i64>,
+        pub atom_index: Vec<i64>,
     }
 
     impl SimulationBox {
         //fn cell_subdivison(&self, n_cells: i64) -> f64 {
         //    /*
-        //    Cell subdivsision provides a mean for organizing the information about atom positions
+        //    Cell subdivision provides a mean for organizing the information about atom positions
         //    into a form that avoids most of the unnecessary work and reduces the computational effort to a
         //    O(N_m) level.
         //
@@ -132,9 +171,9 @@ pub mod cell_subdivision {
                                 (y_f * y_length) + y_length / 2.0,
                                 (z_f * z_length) + z_length / 2.0,
                             ),
-                            length: Vector3::new(x_length / 2.0, y_length / 2.0, z_length / 2.0),
-
+                            length: x_length / 2.0,
                             index: Vector3::new(x, y, z),
+                            atom_index: Vec::new(),
                         };
                         cells.push(cell);
                     }
@@ -142,29 +181,44 @@ pub mod cell_subdivision {
             }
             cells
         }
-    }
-}
 
-#[inline]
-pub fn lennard_jones_force_scalar(r: f64, sigma: f64, epsilon: f64) -> f64 {
-    // F(r) magnitude along r-hat; positive = repulsive
-    // d/dr 4ε[(σ/r)^12 - (σ/r)^6]  =>  24ε [2(σ^12/r^13) - (σ^6/r^7)]
-    if r <= 0.0 {
-        return 0.0;
-    }
-    let sr = sigma / r;
-    let sr2 = sr * sr;
-    let sr6 = sr2 * sr2 * sr2;
-    let sr12 = sr6 * sr6;
-    24.0 * epsilon * (2.0 * sr12 - sr6) / r
-}
+        pub fn store_atoms_in_cells_systems(
+            &self,
+            systems: &mut Vec<System>,
+            cells: &mut Vec<MolecularCoordinates>,
+        ) -> () {
+            /*
+            I don't need to store all the coordinates, just the indices of the atoms/systems
+             */
+            for (i, system) in systems.iter_mut().enumerate() {
+                for cell in cells.iter_mut() {
+                    // compute if the distance from the cell center is less than the distance between the cell center and the outward perimeter of the cell
+                    if distance_to(&system.atoms[0].position, &cell.center) <= cell.length {
+                        // at the moment, I'm using one system atom position to compute this distance - this will need to be changed
+                        // this will need to be changed
+                        cell.atom_index.push(i as i64);
+                    }
+                }
+            }
+        }
 
-#[inline]
-fn safe_norm(x: f64) -> f64 {
-    if x < 1e-12 {
-        1e-12
-    } else {
-        x
+        pub fn store_atoms_in_cells_particles(
+            &self,
+            particles: &mut Vec<Particle>,
+            cells: &mut Vec<MolecularCoordinates>,
+        ) -> () {
+            /*
+            I don't need to store all the coordinates, just the indices of the atoms/systems
+             */
+            for (i, particle) in particles.iter_mut().enumerate() {
+                for cell in cells.iter_mut() {
+                    // compute if the distance from the cell center is less than the distance between the cell center and the outward perimeter of the cell
+                    if distance_to(&particle.position, &cell.center) <= cell.length {
+                        cell.atom_index.push(i as i64);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -183,6 +237,8 @@ pub mod lennard_jones_simulations {
     use crate::molecule::molecule::make_h2_system;
     use crate::molecule::molecule::Bond;
     use crate::molecule::molecule::System;
+
+    use crate::lennard_jones_simulations::cell_subdivision::MolecularCoordinates;
 
     #[derive(Clone, Debug)]
     pub struct LJParameters {
@@ -762,6 +818,17 @@ pub mod lennard_jones_simulations {
         let mut final_summary = SimulationSummary { energy: 0.0 };
         let mut values: Vec<f32> = Vec::new();
 
+        // Create the subcells for the simulation box
+        let mut simulation_box = cell_subdivision::SimulationBox {
+            x_dimension: box_length,
+            y_dimension: box_length,
+            z_dimension: box_length,
+        };
+        // Create the subcells - here we have used a subdivision of 10 for the cells
+        let mut subcells = simulation_box.create_subcells(10);
+        // Store the coordinates in cells
+        simulation_box.store_atoms_in_cells_particles(particles, &mut subcells);
+
         // --- initial forces and energy ---
         compute_forces_particles(particles, box_length);
 
@@ -850,6 +917,17 @@ pub mod lennard_jones_simulations {
     ) {
         let mut final_summary = SimulationSummary { energy: 0.0 };
         let mut values: Vec<f32> = Vec::new();
+
+        // Create the subcells for the simulation box
+        let mut simulation_box = cell_subdivision::SimulationBox {
+            x_dimension: box_length,
+            y_dimension: box_length,
+            z_dimension: box_length,
+        };
+        // Create the subcells - here we have used a subdivision of 10 for the cells
+        let mut subcells = simulation_box.create_subcells(10);
+        // Store the coordinates in cells
+        simulation_box.store_atoms_in_cells_systems(systems, &mut subcells);
 
         // --- initial forces and energy ---
         // bonded forces

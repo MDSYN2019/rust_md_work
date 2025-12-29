@@ -1,6 +1,8 @@
 use rand::Rng;
 use rand_dir::{Distribution, Normal};
+
 pub mod ensembles {
+
     #[derive(Clone, Debug)]
     pub struct ThermostatOption {
         pub target_temperature: f64,
@@ -20,7 +22,7 @@ pub mod ensembles {
     }
 
     impl Ensemble {
-        pub fn md_thermoostat_andersen() -> () {
+        pub fn md_thermostat_andersen() -> () {
             /*
 
             // basing this from frenkel and smit
