@@ -725,43 +725,27 @@ pub mod lennard_jones_simulations {
 
     pub fn apply_thermostat_andersen_particles(
         particles: &mut Vec<Particle>,
+        box_length: f64,
         target_temperature: f64,
         dt: f64,
         t_max: f64,
-        tau: f64,
     ) -> () {
         /*
-        Initialize system
-
-        and
-
-        Compute the forces and energy
-
+        Initialize system and compute the forces and energy
          */
         let mut t = 0.0;
+        let mut switch = 1;
 
         while t < t_max {
-            t += dt;
-        }
-
-        let dof = 3 * particles.len();
-        let current_temperature = compute_temperature_particles(particles, dof);
-
-        // Bail if parameters are nonsense or temperature is zero/negative
-        if tau <= 0.0 || dt <= 0.0 || current_temperature <= 0.0 || target_temperature <= 0.0 {
-            return;
-        }
-
-        // Discrete Berendsen: T' = T * (1 + (dt/tau)(T_0/T - 1))
-        // Velocitiea s scale as sqrt (T'/T)
-        let x = (dt / tau) * (target_temperature / current_temperature - 1.0);
-
-        // clamp to avoid negative
-        let x_clamped = x.clamp(-0.9, 10.0);
-        let lambda = (1.0 + x_clamped).max(1e-12).sqrt();
-
-        for particle in particles {
-            particle.velocity *= lambda;
+            // Propagates the half step
+            run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
+            // Compute the forces in the system
+            compute_forces_particles(particles, box_length);
+            // switches to 2
+            switch = 2;
+            // Propagates the second half time step
+            run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
+            t = t + dt;
         }
     }
 
