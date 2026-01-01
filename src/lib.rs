@@ -723,6 +723,48 @@ pub mod lennard_jones_simulations {
         }
     }
 
+    pub fn apply_thermostat_andersen_particles(
+        particles: &mut Vec<Particle>,
+        target_temperature: f64,
+        dt: f64,
+        t_max: f64,
+        tau: f64,
+    ) -> () {
+        /*
+        Initialize system
+
+        and
+
+        Compute the forces and energy
+
+         */
+        let mut t = 0.0;
+
+        while t < t_max {
+            t += dt;
+        }
+
+        let dof = 3 * particles.len();
+        let current_temperature = compute_temperature_particles(particles, dof);
+
+        // Bail if parameters are nonsense or temperature is zero/negative
+        if tau <= 0.0 || dt <= 0.0 || current_temperature <= 0.0 || target_temperature <= 0.0 {
+            return;
+        }
+
+        // Discrete Berendsen: T' = T * (1 + (dt/tau)(T_0/T - 1))
+        // Velocitiea s scale as sqrt (T'/T)
+        let x = (dt / tau) * (target_temperature / current_temperature - 1.0);
+
+        // clamp to avoid negative
+        let x_clamped = x.clamp(-0.9, 10.0);
+        let lambda = (1.0 + x_clamped).max(1e-12).sqrt();
+
+        for particle in particles {
+            particle.velocity *= lambda;
+        }
+    }
+
     pub fn apply_thermostat_berendsen(
         state: &mut InitOutput,
         target_temperature: f64,
@@ -808,6 +850,64 @@ pub mod lennard_jones_simulations {
         )
     }
 
+    pub fn run_md_andersen_particles(
+        particles: &mut Vec<Particle>,
+        dt: f64,
+        box_length: f64,
+        temp: f64,
+        nu: f64, // this is the collision frequency
+        switch: i64,
+    ) -> () {
+        // Equations of motion - Andersen thermostat
+        let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(particles.len());
+        for a in particles.iter() {
+            a_old.push(a.force / a.mass); // compute the acceleration
+        }
+
+        if switch == 1 {
+            for (p, a_o) in particles.iter_mut().zip(a_old.iter()) {
+                // first step velocity verlet
+                p.position += dt * p.velocity + (dt * dt) * a_o / 2.0; // update the position current time
+                p.velocity += 0.5 * a_o * dt; // update velocity
+            }
+        } else if switch == 2 {
+            /*
+            Forces should be recomputed BEFORE this half-kikc
+             */
+            compute_forces_particles(particles, box_length);
+
+            for p in particles.iter_mut() {
+                let a_new = p.force / p.mass; // compute the new acceleration
+                p.velocity += 0.5 * a_new * dt;
+            }
+
+            /*
+            Andersen thermostat step - randomize some velocities.
+            probability ~ nu * dt ( valid when nu * dt is small; otherwise use 1 - exp(-nu * dt)
+             */
+
+            let mut rng = rand::rng();
+            let p_coll = nu * dt;
+
+            for p in particles.iter_mut() {
+                let r: f64 = rng.random(); // randomly assign a value between 0 and 1
+                if r < p_coll {
+                    // If the value of r is smaller than p_col, we reassign the velocity according
+                    // to the maxwell boltzmann distribution of that temperature
+                    let sigma = (temp / p.mass).sqrt();
+                    let normal = Normal::new(0.0, sigma).expect("blah");
+
+                    // assign the new velocities
+                    p.velocity = Vector3::new(
+                        normal.sample(&mut rng),
+                        normal.sample(&mut rng),
+                        normal.sample(&mut rng),
+                    );
+                }
+            }
+        }
+    }
+
     pub fn run_md_nve_particles(
         particles: &mut Vec<Particle>,
         number_of_steps: i32,
@@ -849,18 +949,17 @@ pub mod lennard_jones_simulations {
 
             let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(particles.len());
 
+            // current acceleration
             for a in particles.iter() {
                 a_old.push(a.force / a.mass);
             }
 
-            // 1) position update (Verlet - half step)
-
+            // 1) velocity update (Verlet - half step)
             for (atom, a_o) in particles.iter_mut().zip(a_old.iter()) {
                 atom.velocity += 0.5 * a_o * dt;
             }
 
-            // 2) drift position
-
+            // 2) position update
             for atom in particles.iter_mut() {
                 atom.position += atom.velocity * dt;
             }
@@ -885,6 +984,7 @@ pub mod lennard_jones_simulations {
             // 5) measure temperature
             let dof = 3 * particles.len();
             let system_temperature = compute_temperature_particles(&particles, dof);
+
             println!("T = {system_temperature:.4}");
 
             // 6) thermostat (currently: only Berendsen supported here)
@@ -903,7 +1003,6 @@ pub mod lennard_jones_simulations {
             final_summary.energy = total_energy;
             values.push(total_energy as f32);
         }
-
         // Optional: your running-average helper
         compute_average_val(&mut values, 2, number_of_steps as u64);
     }
