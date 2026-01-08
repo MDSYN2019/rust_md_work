@@ -6,8 +6,8 @@ it tells you how many
 */
 
 use crate::lennard_jones_simulations::Particle;
-use crate::lj_parameters;
 use crate::molecule;
+use crate::parameters;
 
 #[derive(Debug)]
 enum PropertyField {
