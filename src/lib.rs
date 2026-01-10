@@ -548,8 +548,13 @@ pub mod lennard_jones_simulations {
 
     pub fn compute_forces_particles(particles: &mut Vec<Particle>, box_length: f64) {
         /*
-        Computing forces between the single point particles
-         */
+                Computing forces between the single point particles
+
+            Todo - need to add a component where I can only need to loop through
+            the cells that are closest and only compute the forces between
+        the particles in these cells
+
+                 */
         for p in particles.iter_mut() {
             p.force = Vector3::zeros();
         }
