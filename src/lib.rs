@@ -600,6 +600,41 @@ pub mod lennard_jones_simulations {
         2.0 * total_kinetic_energy / (dof as f64)
     }
 
+    pub fn compute_pressure_particles(particles: &[Particle], box_length: f64) -> f64 {
+        let n = particles.len();
+        if n == 0 || box_length <= 0.0 {
+            return 0.0;
+        }
+
+        let dof = 3 * n;
+        let temperature = compute_temperature_particles(particles, dof);
+        let volume = box_length.powi(3);
+
+        let mut virial = 0.0;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let r_vec = particles[j].position - particles[i].position;
+                let r_mic = minimum_image_convention(r_vec, box_length);
+                let r = r_mic.norm();
+                if r == 0.0 {
+                    continue;
+                }
+
+                let si = particles[i].lj_parameters.sigma;
+                let ei = particles[i].lj_parameters.epsilon;
+                let sj = particles[j].lj_parameters.sigma;
+                let ej = particles[j].lj_parameters.epsilon;
+                let sigma = 0.5 * (si + sj);
+                let epsilon = (ei * ej).sqrt();
+                let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+                let f_vec = (r_mic / r) * f_mag;
+                virial += r_mic.dot(&f_vec);
+            }
+        }
+
+        (n as f64 * temperature + virial / 3.0) / volume
+    }
+
     pub fn compute_temperature(state: &mut InitOutput, dof: usize) -> f64 {
         match state {
             InitOutput::Particles(p) => compute_temperature_particles(p, dof),
@@ -725,27 +760,37 @@ pub mod lennard_jones_simulations {
 
     pub fn apply_thermostat_andersen_particles(
         particles: &mut Vec<Particle>,
-        box_length: f64,
         target_temperature: f64,
+        collision_frequency: f64,
         dt: f64,
-        t_max: f64,
     ) -> () {
-        /*
-        Initialize system and compute the forces and energy
-         */
-        let mut t = 0.0;
-        let mut switch = 1;
+        apply_andersen_collisions(particles, target_temperature, collision_frequency, dt);
+    }
 
-        while t < t_max {
-            // Propagates the half step
-            run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
-            // Compute the forces in the system
-            compute_forces_particles(particles, box_length);
-            // switches to 2
-            switch = 2;
-            // Propagates the second half time step
-            run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
-            t = t + dt;
+    pub fn apply_andersen_collisions(
+        particles: &mut Vec<Particle>,
+        target_temperature: f64,
+        collision_frequency: f64,
+        dt: f64,
+    ) {
+        if dt <= 0.0 || collision_frequency <= 0.0 || target_temperature <= 0.0 {
+            return;
+        }
+
+        let mut rng = rand::rng();
+        let p_coll = 1.0 - (-collision_frequency * dt).exp();
+
+        for p in particles.iter_mut() {
+            let r: f64 = rng.random();
+            if r < p_coll {
+                let sigma = (target_temperature / p.mass).sqrt();
+                let normal = Normal::new(0.0, sigma).expect("failed to create distribution");
+                p.velocity = Vector3::new(
+                    normal.sample(&mut rng),
+                    normal.sample(&mut rng),
+                    normal.sample(&mut rng),
+                );
+            }
         }
     }
 
@@ -775,6 +820,30 @@ pub mod lennard_jones_simulations {
                 //  - apply to every atom in every sys
                 // Do that later if you care about strict ensemble correctness.
             }
+        }
+    }
+
+    pub fn apply_barostat_berendsen_particles(
+        particles: &mut Vec<Particle>,
+        box_length: &mut f64,
+        target_pressure: f64,
+        tau_p: f64,
+        dt: f64,
+        compressibility: f64,
+    ) {
+        if tau_p <= 0.0 || dt <= 0.0 || compressibility <= 0.0 || *box_length <= 0.0 {
+            return;
+        }
+
+        let current_pressure = compute_pressure_particles(particles, *box_length);
+        let scale =
+            1.0 - (dt / tau_p) * compressibility * (target_pressure - current_pressure);
+        let scale_clamped = scale.clamp(0.5, 1.5);
+        let length_scale = scale_clamped.cbrt();
+
+        *box_length *= length_scale;
+        for p in particles.iter_mut() {
+            p.position *= length_scale;
         }
     }
 
@@ -837,7 +906,7 @@ pub mod lennard_jones_simulations {
     pub fn run_md_andersen_particles(
         particles: &mut Vec<Particle>,
         dt: f64,
-        box_length: f64,
+        _box_length: f64,
         temp: f64,
         nu: f64, // this is the collision frequency
         switch: i64,
@@ -858,8 +927,6 @@ pub mod lennard_jones_simulations {
             /*
             Forces should be recomputed BEFORE this half-kikc
              */
-            compute_forces_particles(particles, box_length);
-
             for p in particles.iter_mut() {
                 let a_new = p.force / p.mass; // compute the new acceleration
                 p.velocity += 0.5 * a_new * dt;
@@ -867,28 +934,9 @@ pub mod lennard_jones_simulations {
 
             /*
             Andersen thermostat step - randomize some velocities.
-            probability ~ nu * dt ( valid when nu * dt is small; otherwise use 1 - exp(-nu * dt)
+            probability = 1 - exp(-nu * dt)
              */
-
-            let mut rng = rand::rng();
-            let p_coll = nu * dt;
-
-            for p in particles.iter_mut() {
-                let r: f64 = rng.random(); // randomly assign a value between 0 and 1
-                if r < p_coll {
-                    // If the value of r is smaller than p_col, we reassign the velocity according
-                    // to the maxwell boltzmann distribution of that temperature
-                    let sigma = (temp / p.mass).sqrt();
-                    let normal = Normal::new(0.0, sigma).expect("blah");
-
-                    // assign the new velocities
-                    p.velocity = Vector3::new(
-                        normal.sample(&mut rng),
-                        normal.sample(&mut rng),
-                        normal.sample(&mut rng),
-                    );
-                }
-            }
+            apply_andersen_collisions(particles, temp, nu, dt);
         }
     }
 
@@ -974,6 +1022,8 @@ pub mod lennard_jones_simulations {
             // 6) thermostat (currently: only Berendsen supported here)
             if thermostat == "berendsen" {
                 apply_thermostat_berendsen_particles(particles, 300.0, 0.1, dt);
+            } else if thermostat == "andersen" {
+                apply_andersen_collisions(particles, 300.0, 1.0, dt);
             }
 
             // 7) recompute energy
@@ -1074,6 +1124,8 @@ pub mod lennard_jones_simulations {
 
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
+                } else if thermostat == "andersen" {
+                    apply_andersen_collisions(&mut sys.atoms, 300.0, 1.0, dt);
                 }
             }
 

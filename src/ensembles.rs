@@ -4,7 +4,7 @@ use rand_dir::{Distribution, Normal};
 pub mod ensembles {
 
     #[derive(Clone, Debug)]
-    pub struct ThermostatOption {
+    pub struct ThermostatOptions {
         pub target_temperature: f64,
         pub relaxation_time: f64,
     }
