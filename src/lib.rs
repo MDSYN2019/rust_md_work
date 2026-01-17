@@ -76,6 +76,8 @@ pub mod error;
 pub mod molecule;
 pub mod parameters;
 
+use std::collections::HashSet;
+
 // Use when importing the finished minimization modulexo
 //use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
 
@@ -100,6 +102,17 @@ fn safe_norm(x: f64) -> f64 {
     } else {
         x
     }
+}
+
+#[inline]
+fn dedup_permutation(v: &mut Vec<Vec<i32>>) {
+    let mut seen: HashSet<Vec<i32>> = HashSet::new();
+
+    v.retain(|inner| {
+        let mut key = inner.clone();
+        key.sort_unstable(); // canonicalize: [2,1] -> [1,2]
+        seen.insert(key) // true if first time
+    });
 }
 
 pub mod cell_subdivision {
@@ -224,6 +237,9 @@ pub mod cell_subdivision {
 
             let box_size = Vector3::new(self.x_dimension, self.y_dimension, self.z_dimension);
             // let n_cells_total = cells.len();
+
+            // Store all the particles in the appropriate
+
             for (i, particle) in particles.iter_mut().enumerate() {
                 let (ix, iy, iz) = position_to_cell_3d(&particle.position, &box_size, n_cells);
 
@@ -496,9 +512,19 @@ pub mod lennard_jones_simulations {
 
                 pbc_update(particles, box_length);
 
-                // TODO - apply minimum image and displacement
+                // TODO - apply cell subdivision
 
-                compute_forces_particles(particles, box_length);
+                let mut simulation_box = cell_subdivision::SimulationBox {
+                    x_dimension: box_length,
+                    y_dimension: box_length,
+                    z_dimension: box_length,
+                };
+
+                // Create the subcells - here we have used a subdivision of 10 for the cells
+                let mut subcells = simulation_box.create_subcells(10);
+                // Store the coordinates in cells
+                simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+                compute_forces_particles(particles, box_length, &mut subcells);
 
                 for particle in particles.iter_mut() {
                     println!(
@@ -546,7 +572,11 @@ pub mod lennard_jones_simulations {
         0.5 * b.k * dr * dr
     }
 
-    pub fn compute_forces_particles(particles: &mut Vec<Particle>, box_length: f64) {
+    pub fn compute_forces_particles(
+        particles: &mut Vec<Particle>,
+        box_length: f64,
+        cells: &mut Vec<MolecularCoordinates>,
+    ) {
         /*
                 Computing forces between the single point particles
 
@@ -558,14 +588,51 @@ pub mod lennard_jones_simulations {
         for p in particles.iter_mut() {
             p.force = Vector3::zeros();
         }
+        let mut cell_match_storage: Vec<Vec<i32>> = Vec::new();
 
         let n = particles.len(); // number of particles in the system
                                  // initalize zero forces for each particle
+
+        for (i, particle) in particles.iter_mut().enumerate() {}
+
+        // Instead of looping over each particle,
+        // will probably need to loop over the
+        // cells that match within the distance boundary
+        let cell_limit = 1.0;
+
+        for i in 0..cells.len() {
+            for j in (i + 1)..cells.len() {
+                // compute the distance between the cells
+                let cell_dist = cells[i].center - cells[j].center;
+                let cell_r = cell_dist.norm();
+                if cell_r <= cell_limit {
+                    let cell_match_instance = vec![i as i32, j as i32];
+                    println!(
+                        " We have the following cell match instance {:?}",
+                        cell_match_instance
+                    );
+                    cell_match_storage.push(cell_match_instance);
+                }
+            }
+        }
+        // dedup the indices
+        dedup_permutation(&mut cell_match_storage);
+
+        // loop over the cells
+
+        for cell_i in 0..cell_match_storage.len() {
+            let cell_I = cell_match_storage[cell_i][0];
+            let cell_II = cell_match_storage[cell_i][0];
+        }
+
+        // TODO
+
         for i in 0..n {
             for j in (i + 1)..n {
                 let r_vec = particles[j].position - particles[i].position;
                 let r_mic = minimum_image_convention(r_vec, box_length);
-                let r = r_mic.norm();
+                let r = r_mic.norm(); // compute the distance
+
                 if r == 0.0 {
                     continue;
                 }
@@ -761,8 +828,20 @@ pub mod lennard_jones_simulations {
         while t < t_max {
             // Propagates the half step
             run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
+
+            let mut simulation_box = cell_subdivision::SimulationBox {
+                x_dimension: box_length,
+                y_dimension: box_length,
+                z_dimension: box_length,
+            };
+
+            // Create the subcells - here we have used a subdivision of 10 for the cells
+            let mut subcells = simulation_box.create_subcells(10);
+            // Store the coordinates in cells
+            simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+
             // Compute the forces in the system
-            compute_forces_particles(particles, box_length);
+            compute_forces_particles(particles, box_length, &mut subcells);
             // switches to 2
             switch = 2;
             // Propagates the second half time step
@@ -880,7 +959,17 @@ pub mod lennard_jones_simulations {
             /*
             Forces should be recomputed BEFORE this half-kikc
              */
-            compute_forces_particles(particles, box_length);
+
+            let mut simulation_box = cell_subdivision::SimulationBox {
+                x_dimension: box_length,
+                y_dimension: box_length,
+                z_dimension: box_length,
+            };
+
+            let mut subcells = simulation_box.create_subcells(10);
+            // Store the coordinates in cells
+            simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+            compute_forces_particles(particles, box_length, &mut subcells);
 
             for p in particles.iter_mut() {
                 let a_new = p.force / p.mass; // compute the new acceleration
@@ -937,7 +1026,7 @@ pub mod lennard_jones_simulations {
         simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
 
         // --- initial forces and energy ---
-        compute_forces_particles(particles, box_length);
+        compute_forces_particles(particles, box_length, &mut subcells);
 
         let mut kinetic_energy = 0.0;
         for p in particles.iter() {
@@ -979,7 +1068,7 @@ pub mod lennard_jones_simulations {
             pbc_update(particles, box_length);
 
             // 3) recompute forces (LJ)
-            compute_forces_particles(particles, box_length);
+            //compute_forces_particles(particles, box_length);
 
             // 4) velocity update (Verlet - second half step)
             for p in particles.iter_mut() {
@@ -992,7 +1081,7 @@ pub mod lennard_jones_simulations {
             let dof = 3 * particles.len();
             let system_temperature = compute_temperature_particles(&particles, dof);
 
-            println!("T = {system_temperature:.4}");
+            //println!("T = {system_temperature:.4}");
 
             // 6) thermostat (currently: only Berendsen supported here)
             if thermostat == "berendsen" {
@@ -1093,7 +1182,7 @@ pub mod lennard_jones_simulations {
                 // 5) thermostat per system (optional)
                 let dof = 3 * sys.atoms.len();
                 let system_temperature = compute_temperature_particles(&sys.atoms, dof);
-                println!("T = {system_temperature:.4}");
+                // println!("T = {system_temperature:.4}");
 
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
