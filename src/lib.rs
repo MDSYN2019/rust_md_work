@@ -621,8 +621,13 @@ pub mod lennard_jones_simulations {
         // loop over the cells
 
         for cell_i in 0..cell_match_storage.len() {
+            // select cell entry
             let cell_I = cell_match_storage[cell_i][0];
-            let cell_II = cell_match_storage[cell_i][0];
+            let cell_II = cell_match_storage[cell_i][1];
+
+            for i_index in cells[cell_I as usize].atom_index.iter() {
+                for j_index in cells[cell_II as usize].atom_index.iter() {}
+            }
         }
 
         // TODO
