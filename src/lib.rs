@@ -616,51 +616,73 @@ pub mod lennard_jones_simulations {
             }
         }
         // dedup the indices
-        dedup_permutation(&mut cell_match_storage);
+        dedup_permutation(&mut cell_match_storage); // TODO - understand the operation of this deduping
 
         // loop over the cells
-
         for cell_i in 0..cell_match_storage.len() {
             // select cell entry
             let cell_I = cell_match_storage[cell_i][0];
             let cell_II = cell_match_storage[cell_i][1];
 
             for i_index in cells[cell_I as usize].atom_index.iter() {
-                for j_index in cells[cell_II as usize].atom_index.iter() {}
+                for j_index in cells[cell_II as usize].atom_index.iter() {
+                    let r_vec = particles[*i_index].position - particles[*j_index].position;
+                    let r_mic = minimum_image_convention(r_vec, box_length);
+                    let r = r_mic.norm(); // compute the distance
+                    if r == 0.0 {
+                        continue;
+                    }
+                    let si = particles[*i_index].lj_parameters.sigma;
+                    let ei = particles[*i_index].lj_parameters.epsilon;
+                    let sj = particles[*j_index].lj_parameters.sigma;
+                    let ej = particles[*j_index].lj_parameters.epsilon;
+                    let sigma = 0.5 * (si + sj);
+                    let epsilon = (ei * ej).sqrt();
+                    let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+                    let f_vec = (r_mic / r) * f_mag; // along r-hat
+
+                    // action = -reaction
+                    particles[*i_index].force -= f_vec;
+                    particles[*j_index].force += f_vec;
+                    println!(
+                        "The forces are {:?} {:?}",
+                        particles[*i_index].force, particles[*j_index].force
+                    );
+                }
             }
         }
 
         // TODO
 
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let r_vec = particles[j].position - particles[i].position;
-                let r_mic = minimum_image_convention(r_vec, box_length);
-                let r = r_mic.norm(); // compute the distance
-
-                if r == 0.0 {
-                    continue;
-                }
-
-                // mix params (Lorentz-Berthelot)
-                let si = particles[i].lj_parameters.sigma;
-                let ei = particles[i].lj_parameters.epsilon;
-                let sj = particles[j].lj_parameters.sigma;
-                let ej = particles[j].lj_parameters.epsilon;
-                let sigma = 0.5 * (si + sj);
-                let epsilon = (ei * ej).sqrt();
-                let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
-                let f_vec = (r_mic / r) * f_mag; // along r-hat
-
-                // action = -reaction
-                particles[i].force -= f_vec;
-                particles[j].force += f_vec;
-                println!(
-                    "The forces are {:?} {:?}",
-                    particles[i].force, particles[j].force
-                );
-            }
-        }
+        //for i in 0..n {
+        //    for j in (i + 1)..n {
+        //        let r_vec = particles[j].position - particles[i].position;
+        //        let r_mic = minimum_image_convention(r_vec, box_length);
+        //        let r = r_mic.norm(); // compute the distance
+        //
+        //        if r == 0.0 {
+        //            continue;
+        //        }
+        //
+        //        // mix params (Lorentz-Berthelot)
+        //        let si = particles[i].lj_parameters.sigma;
+        //        let ei = particles[i].lj_parameters.epsilon;
+        //        let sj = particles[j].lj_parameters.sigma;
+        //        let ej = particles[j].lj_parameters.epsilon;
+        //        let sigma = 0.5 * (si + sj);
+        //        let epsilon = (ei * ej).sqrt();
+        //        let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+        //        let f_vec = (r_mic / r) * f_mag; // along r-hat
+        //
+        //        // action = -reaction
+        //        particles[i].force -= f_vec;
+        //        particles[j].force += f_vec;
+        //        println!(
+        //            "The forces are {:?} {:?}",
+        //            particles[i].force, particles[j].force
+        //        );
+        //    }
+        //}
         // apply bonded terms
         //let bonded_terms = apply_bonded_forces_and_energy(particles, bonds);
     }
@@ -711,7 +733,6 @@ pub mod lennard_jones_simulations {
                         total_atoms += 1;
                     }
                 }
-
                 if total_atoms == 0 {
                     0.0
                 } else {
