@@ -703,6 +703,7 @@ pub mod lennard_jones_simulations {
     }
 
     pub fn compute_temperature_particles(particles: &[Particle], dof: usize) -> f64 {
+        // TODO - need to actually implement the boltzmann constant for computing the temperature
         if dof == 0 {
             return 0.0;
         }
@@ -714,6 +715,53 @@ pub mod lennard_jones_simulations {
         }
 
         2.0 * total_kinetic_energy / (dof as f64)
+    }
+
+    pub fn compute_pressure_particles(particles: &[Particle], box_length: f64) -> f64 {
+        let n = particles.len();
+        if n == 0 || box_length <= 0.0 {
+            return 0.0;
+        }
+
+        let dof = 3 * n; // each particle has a degree of freedom of 3
+        let temperature = compute_temperature_particles(particles, dof);
+        let volume = box_length.powi(3);
+
+        // The virial measures how particle positions correlate with force
+
+        // hence - virial shows how strongly forces act at a given distance
+
+        let mut virial = 0.0;
+
+        for i in 0..n {
+            // loop over the particles
+            for j in (i + 1)..n {
+                let r_vec = particles[j].position - particles[i].position; // compute the distance between particles
+                let r_mic = minimum_image_convention(r_vec, box_length); // recompute the distance according to the minimum image convention
+                let r = r_mic.norm(); // gets the magnitude of the distance
+
+                if r == 0.0 {
+                    continue;
+                }
+
+                let si = particles[i].lj_parameters.sigma; // sigma for the lennard jones force contribution
+                let ei = particles[i].lj_parameters.epsilon; // epsilon parameter
+
+                let sj = particles[j].lj_parameters.sigma;
+                let ej = particles[j].lj_parameters.epsilon;
+
+                // need to remind myself which mixing rules are these
+                let sigma = 0.5 * (si + sj);
+                let epsilon = (ei + ej).sqrt();
+
+                let f_mag = lennard_jones_force_scalar(r, sigma, epsilon); // pairwise force
+                let f_vec = (r_mic / r) * f_mag; //we get the unit vector, and we get the radial force magnitude
+
+                virial += r_mic.dot(&f_vec);
+            }
+        }
+
+        (n as f64 * temperature + virial) / (volume * 3.0)
     }
 
     pub fn compute_temperature(state: &mut InitOutput, dof: usize) -> f64 {
@@ -819,7 +867,6 @@ pub mod lennard_jones_simulations {
          */
         let dof = 3 * particles.len();
         let current_temperature = compute_temperature_particles(particles, dof);
-
         // Bail if parameters are nonsense or temperature is zero/negative
         if tau <= 0.0 || dt <= 0.0 || current_temperature <= 0.0 || target_temperature <= 0.0 {
             return;
