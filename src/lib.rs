@@ -67,9 +67,16 @@ Each `Particle` struct contains:
 */
 extern crate assert_type_eq;
 
+// The compiler will look for the module's code in the following places:
+
+// src/error.rs
+// src/molcule.rs
+// src/parameters.rs
 pub mod error;
 pub mod molecule;
 pub mod parameters;
+
+use std::collections::HashSet;
 
 // Use when importing the finished minimization modulexo
 //use sang_md::lennard_jones_simulations::{self, compute_total_energy_and_print};
@@ -97,6 +104,17 @@ fn safe_norm(x: f64) -> f64 {
     }
 }
 
+#[inline]
+fn dedup_permutation(v: &mut Vec<Vec<i32>>) {
+    let mut seen: HashSet<Vec<i32>> = HashSet::new();
+
+    v.retain(|inner| {
+        let mut key = inner.clone();
+        key.sort_unstable(); // canonicalize: [2,1] -> [1,2]
+        seen.insert(key) // true if first time
+    });
+}
+
 pub mod cell_subdivision {
 
     use super::*; //
@@ -114,10 +132,47 @@ pub mod cell_subdivision {
     within a certain radius cutoff rather than working with all the atoms in the system
      */
 
+    fn wrap_index(i: isize, n: usize) -> usize {
+        let n = n as isize;
+        (((i % n) + n) % n) as usize
+    }
+
+    fn cell_id(ix: usize, iy: usize, iz: usize, n: usize) -> usize {
+        (ix * n + iy) * n + iz
+    }
+
     fn distance_to(this: &Vector3<f64>, other: &Vector3<f64>) -> f64 {
         // Calculate the distance using the Euclidean distance formula
         ((this.x - other.x).powi(2) + (this.y - other.y).powi(2) + (this.z - other.z).powi(2))
             .sqrt()
+    }
+
+    fn position_to_cell_3d(
+        pos: &Vector3<f64>,
+        box_size: &Vector3<f64>,
+        n_cells: usize,
+    ) -> (usize, usize, usize) {
+        /*
+        Map to [0, L) first if you're storing unwrapped coordinates
+        if your pos is already in [0, L), you can skip this
+         */
+
+        let x = pos.x.rem_euclid(box_size.x); // wrap around x coordinate
+        let y = pos.y.rem_euclid(box_size.y); // wrap around y coordinate
+        let z = pos.z.rem_euclid(box_size.z); // wrap around z coordinate
+
+        // normalized coordinates around [0, 1)
+
+        let fx = (x / box_size.x) * n_cells as f64;
+        let fy = (y / box_size.y) * n_cells as f64;
+        let fz = (z / box_size.z) * n_cells as f64;
+
+        // floor gives 0..n_cells-1, but we still wrap to be safe
+        let ix = wrap_index(fx.floor() as isize, n_cells);
+        let iy = wrap_index(fy.floor() as isize, n_cells);
+        let iz = wrap_index(fz.floor() as isize, n_cells);
+
+        (ix, iy, iz)
     }
 
     pub struct SimulationBox {
@@ -131,92 +186,70 @@ pub mod cell_subdivision {
         struct to store information about each subdivsion of cells
         */
         pub center: Vector3<f64>,
-        pub length: f64,
-        pub index: Vector3<i64>,
-        pub atom_index: Vec<i64>,
+        //pub length: f64,
+        pub half_length: Vector3<f64>,
+        pub index: Vector3<usize>,
+        pub atom_index: Vec<usize>,
     }
 
     impl SimulationBox {
-        //fn cell_subdivison(&self, n_cells: i64) -> f64 {
-        //    /*
-        //    Cell subdivision provides a mean for organizing the information about atom positions
-        //    into a form that avoids most of the unnecessary work and reduces the computational effort to a
-        //    O(N_m) level.
-        //
-        //    Linked lists are used to associate atoms with the cells in which they reside at any given instant.
-        //     */
-        //
-        //    let box_size = Vector3::new(self.x_dimension, self.y_dimension, self.z_dimension);
-        //    let cell_n = box_size / (n_cells as f64);
-        //    cell_n
-        //}
+        pub fn create_subcells(&self, n_cells: usize) -> Vec<MolecularCoordinates> {
+            let mut cells = Vec::with_capacity(n_cells * n_cells * n_cells);
 
-        pub fn create_subcells(&self, cell_n: i64) -> Vec<MolecularCoordinates> {
-            let mut cells: Vec<MolecularCoordinates> = Vec::new();
+            let dx = self.x_dimension / n_cells as f64;
+            let dy = self.y_dimension / n_cells as f64;
+            let dz = self.z_dimension / n_cells as f64;
 
-            // define the  'chunks' of which we want to divide the cells into
-            let x_length: f64 = self.x_dimension / cell_n as f64;
-            let y_length: f64 = self.y_dimension / cell_n as f64;
-            let z_length: f64 = self.z_dimension / cell_n as f64;
-
-            for x in 0..cell_n {
-                for y in 0..cell_n {
-                    for z in 0..cell_n {
-                        let x_f = x as f64;
-                        let y_f = y as f64;
-                        let z_f = z as f64;
-                        let mut cell = MolecularCoordinates {
+            for ix in 0..n_cells {
+                for iy in 0..n_cells {
+                    for iz in 0..n_cells {
+                        cells.push(MolecularCoordinates {
                             center: Vector3::new(
-                                (x_f * x_length) + x_length / 2.0,
-                                (y_f * y_length) + y_length / 2.0,
-                                (z_f * z_length) + z_length / 2.0,
+                                (ix as f64 + 0.5) * dx,
+                                (iy as f64 + 0.5) * dy,
+                                (iz as f64 + 0.5) * dz,
                             ),
-                            length: x_length / 2.0,
-                            index: Vector3::new(x, y, z),
+                            half_length: Vector3::new(dx * 0.5, dy * 0.5, dz * 0.5),
+                            index: Vector3::new(ix, iy, iz),
                             atom_index: Vec::new(),
-                        };
-                        cells.push(cell);
+                        });
                     }
                 }
             }
-            cells
-        }
 
-        pub fn store_atoms_in_cells_systems(
-            &self,
-            systems: &mut Vec<System>,
-            cells: &mut Vec<MolecularCoordinates>,
-        ) -> () {
-            /*
-            I don't need to store all the coordinates, just the indices of the atoms/systems
-             */
-            for (i, system) in systems.iter_mut().enumerate() {
-                for cell in cells.iter_mut() {
-                    // compute if the distance from the cell center is less than the distance between the cell center and the outward perimeter of the cell
-                    if distance_to(&system.atoms[0].position, &cell.center) <= cell.length {
-                        // at the moment, I'm using one system atom position to compute this distance - this will need to be changed
-                        // this will need to be changed
-                        cell.atom_index.push(i as i64);
-                    }
-                }
-            }
+            cells
         }
 
         pub fn store_atoms_in_cells_particles(
             &self,
             particles: &mut Vec<Particle>,
             cells: &mut Vec<MolecularCoordinates>,
+            n_cells: usize,
         ) -> () {
             /*
             I don't need to store all the coordinates, just the indices of the atoms/systems
              */
+
+            // Clear previous contents
+            for cell in cells.iter_mut() {
+                cell.atom_index.clear();
+            }
+
+            let box_size = Vector3::new(self.x_dimension, self.y_dimension, self.z_dimension);
+            // let n_cells_total = cells.len();
+
+            // Store all the particles in the appropriate
+
             for (i, particle) in particles.iter_mut().enumerate() {
-                for cell in cells.iter_mut() {
-                    // compute if the distance from the cell center is less than the distance between the cell center and the outward perimeter of the cell
-                    if distance_to(&particle.position, &cell.center) <= cell.length {
-                        cell.atom_index.push(i as i64);
-                    }
-                }
+                let (ix, iy, iz) = position_to_cell_3d(&particle.position, &box_size, n_cells);
+
+                let cid = cell_id(ix, iy, iz, n_cells);
+                cells[cid].atom_index.push(i);
+
+                // compute if the distance from the cell center is less than the distance between the cell center and the outward perimeter of the cell
+                //if distance_to(&particle.position, &cell.center) <= cell.length {
+                //    cell.atom_index.push(i as i64);
+                //}
             }
         }
     }
@@ -479,9 +512,19 @@ pub mod lennard_jones_simulations {
 
                 pbc_update(particles, box_length);
 
-                // TODO - apply minimum image and displacement
+                // TODO - apply cell subdivision
 
-                compute_forces_particles(particles, box_length);
+                let mut simulation_box = cell_subdivision::SimulationBox {
+                    x_dimension: box_length,
+                    y_dimension: box_length,
+                    z_dimension: box_length,
+                };
+
+                // Create the subcells - here we have used a subdivision of 10 for the cells
+                let mut subcells = simulation_box.create_subcells(10);
+                // Store the coordinates in cells
+                simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+                compute_forces_particles(particles, box_length, &mut subcells);
 
                 for particle in particles.iter_mut() {
                     println!(
@@ -529,44 +572,117 @@ pub mod lennard_jones_simulations {
         0.5 * b.k * dr * dr
     }
 
-    pub fn compute_forces_particles(particles: &mut Vec<Particle>, box_length: f64) {
+    pub fn compute_forces_particles(
+        particles: &mut Vec<Particle>,
+        box_length: f64,
+        cells: &mut Vec<MolecularCoordinates>,
+    ) {
         /*
-        Computing forces between the single point particles
-         */
+                Computing forces between the single point particles
+
+            Todo - need to add a component where I can only need to loop through
+            the cells that are closest and only compute the forces between
+        the particles in these cells
+
+                 */
         for p in particles.iter_mut() {
             p.force = Vector3::zeros();
         }
+        let mut cell_match_storage: Vec<Vec<i32>> = Vec::new();
 
         let n = particles.len(); // number of particles in the system
                                  // initalize zero forces for each particle
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let r_vec = particles[j].position - particles[i].position;
-                let r_mic = minimum_image_convention(r_vec, box_length);
-                let r = r_mic.norm();
-                if r == 0.0 {
-                    continue;
+
+        for (i, particle) in particles.iter_mut().enumerate() {}
+
+        // Instead of looping over each particle,
+        // will probably need to loop over the
+        // cells that match within the distance boundary
+        let cell_limit = 1.0;
+
+        for i in 0..cells.len() {
+            for j in (i + 1)..cells.len() {
+                // compute the distance between the cells
+                let cell_dist = cells[i].center - cells[j].center;
+                let cell_r = cell_dist.norm();
+                if cell_r <= cell_limit {
+                    let cell_match_instance = vec![i as i32, j as i32];
+                    println!(
+                        " We have the following cell match instance {:?}",
+                        cell_match_instance
+                    );
+                    cell_match_storage.push(cell_match_instance);
                 }
-
-                // mix params (Lorentz-Berthelot)
-                let si = particles[i].lj_parameters.sigma;
-                let ei = particles[i].lj_parameters.epsilon;
-                let sj = particles[j].lj_parameters.sigma;
-                let ej = particles[j].lj_parameters.epsilon;
-                let sigma = 0.5 * (si + sj);
-                let epsilon = (ei * ej).sqrt();
-                let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
-                let f_vec = (r_mic / r) * f_mag; // along r-hat
-
-                // action = -reaction
-                particles[i].force -= f_vec;
-                particles[j].force += f_vec;
-                println!(
-                    "The forces are {:?} {:?}",
-                    particles[i].force, particles[j].force
-                );
             }
         }
+        // dedup the indices
+        dedup_permutation(&mut cell_match_storage); // TODO - understand the operation of this deduping
+
+        // loop over the cells
+        for cell_i in 0..cell_match_storage.len() {
+            // select cell entry
+            let cell_I = cell_match_storage[cell_i][0];
+            let cell_II = cell_match_storage[cell_i][1];
+
+            for i_index in cells[cell_I as usize].atom_index.iter() {
+                for j_index in cells[cell_II as usize].atom_index.iter() {
+                    let r_vec = particles[*i_index].position - particles[*j_index].position;
+                    let r_mic = minimum_image_convention(r_vec, box_length);
+                    let r = r_mic.norm(); // compute the distance
+                    if r == 0.0 {
+                        continue;
+                    }
+                    let si = particles[*i_index].lj_parameters.sigma;
+                    let ei = particles[*i_index].lj_parameters.epsilon;
+                    let sj = particles[*j_index].lj_parameters.sigma;
+                    let ej = particles[*j_index].lj_parameters.epsilon;
+                    let sigma = 0.5 * (si + sj);
+                    let epsilon = (ei * ej).sqrt();
+                    let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+                    let f_vec = (r_mic / r) * f_mag; // along r-hat
+
+                    // action = -reaction
+                    particles[*i_index].force -= f_vec;
+                    particles[*j_index].force += f_vec;
+                    println!(
+                        "The forces are {:?} {:?}",
+                        particles[*i_index].force, particles[*j_index].force
+                    );
+                }
+            }
+        }
+
+        // TODO
+
+        //for i in 0..n {
+        //    for j in (i + 1)..n {
+        //        let r_vec = particles[j].position - particles[i].position;
+        //        let r_mic = minimum_image_convention(r_vec, box_length);
+        //        let r = r_mic.norm(); // compute the distance
+        //
+        //        if r == 0.0 {
+        //            continue;
+        //        }
+        //
+        //        // mix params (Lorentz-Berthelot)
+        //        let si = particles[i].lj_parameters.sigma;
+        //        let ei = particles[i].lj_parameters.epsilon;
+        //        let sj = particles[j].lj_parameters.sigma;
+        //        let ej = particles[j].lj_parameters.epsilon;
+        //        let sigma = 0.5 * (si + sj);
+        //        let epsilon = (ei * ej).sqrt();
+        //        let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+        //        let f_vec = (r_mic / r) * f_mag; // along r-hat
+        //
+        //        // action = -reaction
+        //        particles[i].force -= f_vec;
+        //        particles[j].force += f_vec;
+        //        println!(
+        //            "The forces are {:?} {:?}",
+        //            particles[i].force, particles[j].force
+        //        );
+        //    }
+        //}
         // apply bonded terms
         //let bonded_terms = apply_bonded_forces_and_energy(particles, bonds);
     }
@@ -617,7 +733,6 @@ pub mod lennard_jones_simulations {
                         total_atoms += 1;
                     }
                 }
-
                 if total_atoms == 0 {
                     0.0
                 } else {
@@ -739,8 +854,20 @@ pub mod lennard_jones_simulations {
         while t < t_max {
             // Propagates the half step
             run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
+
+            let mut simulation_box = cell_subdivision::SimulationBox {
+                x_dimension: box_length,
+                y_dimension: box_length,
+                z_dimension: box_length,
+            };
+
+            // Create the subcells - here we have used a subdivision of 10 for the cells
+            let mut subcells = simulation_box.create_subcells(10);
+            // Store the coordinates in cells
+            simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+
             // Compute the forces in the system
-            compute_forces_particles(particles, box_length);
+            compute_forces_particles(particles, box_length, &mut subcells);
             // switches to 2
             switch = 2;
             // Propagates the second half time step
@@ -858,7 +985,17 @@ pub mod lennard_jones_simulations {
             /*
             Forces should be recomputed BEFORE this half-kikc
              */
-            compute_forces_particles(particles, box_length);
+
+            let mut simulation_box = cell_subdivision::SimulationBox {
+                x_dimension: box_length,
+                y_dimension: box_length,
+                z_dimension: box_length,
+            };
+
+            let mut subcells = simulation_box.create_subcells(10);
+            // Store the coordinates in cells
+            simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+            compute_forces_particles(particles, box_length, &mut subcells);
 
             for p in particles.iter_mut() {
                 let a_new = p.force / p.mass; // compute the new acceleration
@@ -908,13 +1045,14 @@ pub mod lennard_jones_simulations {
             y_dimension: box_length,
             z_dimension: box_length,
         };
+
         // Create the subcells - here we have used a subdivision of 10 for the cells
         let mut subcells = simulation_box.create_subcells(10);
         // Store the coordinates in cells
-        simulation_box.store_atoms_in_cells_particles(particles, &mut subcells);
+        simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
 
         // --- initial forces and energy ---
-        compute_forces_particles(particles, box_length);
+        compute_forces_particles(particles, box_length, &mut subcells);
 
         let mut kinetic_energy = 0.0;
         for p in particles.iter() {
@@ -956,7 +1094,7 @@ pub mod lennard_jones_simulations {
             pbc_update(particles, box_length);
 
             // 3) recompute forces (LJ)
-            compute_forces_particles(particles, box_length);
+            //compute_forces_particles(particles, box_length);
 
             // 4) velocity update (Verlet - second half step)
             for p in particles.iter_mut() {
@@ -969,7 +1107,7 @@ pub mod lennard_jones_simulations {
             let dof = 3 * particles.len();
             let system_temperature = compute_temperature_particles(&particles, dof);
 
-            println!("T = {system_temperature:.4}");
+            //println!("T = {system_temperature:.4}");
 
             // 6) thermostat (currently: only Berendsen supported here)
             if thermostat == "berendsen" {
@@ -1010,7 +1148,7 @@ pub mod lennard_jones_simulations {
         // Create the subcells - here we have used a subdivision of 10 for the cells
         let mut subcells = simulation_box.create_subcells(10);
         // Store the coordinates in cells
-        simulation_box.store_atoms_in_cells_systems(systems, &mut subcells);
+        //simulation_box.store_atoms_in_cells_systems(systems, &mut subcells);
 
         // --- initial forces and energy ---
         // bonded forces
@@ -1070,7 +1208,7 @@ pub mod lennard_jones_simulations {
                 // 5) thermostat per system (optional)
                 let dof = 3 * sys.atoms.len();
                 let system_temperature = compute_temperature_particles(&sys.atoms, dof);
-                println!("T = {system_temperature:.4}");
+                // println!("T = {system_temperature:.4}");
 
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
