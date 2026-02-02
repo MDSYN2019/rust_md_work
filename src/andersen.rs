@@ -1,5 +1,9 @@
 pub mod andersen {
+
     use crate::lennard_jones_simulations::Particle;
+    use rand::prelude::*;
+    use rand::Rng;
+    use rand_distr::{Distribution, Normal};
 
     pub fn apply_thermostat_andersen_particles(
         particles: &mut Vec<Particle>,
@@ -54,8 +58,6 @@ pub mod andersen {
         2. Throw away it's current frequency
 
         3. Replace it with a new velocity from the maxwell bolztmann distrbiurion
-
-
          */
         if dt <= 0.0 || collision_frequency <= 0.0 || target_temperature <= 0.0 {
             return;
@@ -125,26 +127,7 @@ pub mod andersen {
 
             probability ~ nu * dt ( valid when nu * dt is small; otherwise use 1 - exp(-nu * dt)
              */
-
-            let mut rng = rand::rng();
-            let p_coll = 1.0 - (-nu * dt).exp();
-
-            for p in particles.iter_mut() {
-                let r: f64 = rng.random(); // randomly assign a value between 0 and 1
-                if r < p_coll {
-                    // If the value of r is smaller than p_col, we reassign the velocity according
-                    // to the maxwell boltzmann distribution of that temperature
-                    let sigma = (temp / p.mass).sqrt();
-                    let normal = Normal::new(0.0, sigma).expect("blah");
-
-                    // assign the new velocities
-                    p.velocity = Vector3::new(
-                        normal.sample(&mut rng),
-                        normal.sample(&mut rng),
-                        normal.sample(&mut rng),
-                    );
-                }
-            }
+            apply_andersen_collisions(particles, temp, nu, dt);
         }
     }
 }
