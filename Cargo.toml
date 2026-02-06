@@ -13,6 +13,7 @@ itertools = "0.14"        # optional
 log = "0.4"               # optional
 assert-type-eq = "0.1.0"
 parameterized = "2.1.0"
+xdrfile = "0.3.0"
 
 [profile.release]
 panic = "abort"
