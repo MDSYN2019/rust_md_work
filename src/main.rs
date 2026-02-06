@@ -37,8 +37,10 @@ fn main() {
                 return; // Exit early or handle the error as needed
             }
         };
-
+    // running a berendsen thermostat simulation
     lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 30, 0.0005, 10.0, "berendsen");
+    // running a andersen thermostat simulation
+    lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 30, 0.0005, 10.0, "andersen");
 
     // --------------------------------------------------------------------------------------//
     // Create a h2 system

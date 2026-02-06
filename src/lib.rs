@@ -260,6 +260,7 @@ pub mod lennard_jones_simulations {
 
     use super::*; //
     use crate::parameters::lj_parameters::lennard_jones_potential;
+    use crate::thermostat_barostat::andersen::andersen::apply_andersen_collisions;
     use error::compute_average_val;
     use nalgebra::{zero, Vector3};
     use rand::prelude::*;
@@ -1157,9 +1158,11 @@ pub mod lennard_jones_simulations {
 
             //println!("T = {system_temperature:.4}");
 
-            // 6) thermostat (currently: only Berendsen supported here)
+            // 6) thermostat (currently:  Berendsen and andersen  supported here)
             if thermostat == "berendsen" {
                 apply_thermostat_berendsen_particles(particles, 300.0, 0.1, dt);
+            } else if thermostat == "andersen" {
+                apply_andersen_collisions(particles, 300.0, 1.0, dt);
             }
 
             // 7) recompute energy
@@ -1257,12 +1260,10 @@ pub mod lennard_jones_simulations {
                 let dof = 3 * sys.atoms.len();
                 let system_temperature = compute_temperature_particles(&sys.atoms, dof);
                 // println!("T = {system_temperature:.4}");
-
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
                 }
             }
-
             // 6) recompute global energy after this step
             kinetic_energy = 0.0;
             potential_energy = 0.0;
