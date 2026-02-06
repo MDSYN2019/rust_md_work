@@ -1,0 +1,56 @@
+   0.020647389s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint: stale: changed "/home/sang/Desktop/Sandbox/rust/rust_md_work/src/thermostat_barostat/nose_hoover.rs"
+   0.020657416s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint:           (vs) "/home/sang/Desktop/Sandbox/rust/rust_md_work/target/debug/.fingerprint/sang_md-6bc4cab9cc83f221/dep-lib-sang_md"
+   0.020660002s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 1770391695, nanos: 315592557 } < FileTime { seconds: 1770391714, nanos: 325769683 }
+   0.020698919s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint: fingerprint dirty for sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("sang_md", ["lib"], "/home/sang/Desktop/Sandbox/rust/rust_md_work/src/lib.rs", Edition2021) }
+   0.020705527s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/home/sang/Desktop/Sandbox/rust/rust_md_work/target/debug/.fingerprint/sang_md-6bc4cab9cc83f221/dep-lib-sang_md", reference_mtime: FileTime { seconds: 1770391695, nanos: 315592557 }, stale: "/home/sang/Desktop/Sandbox/rust/rust_md_work/src/thermostat_barostat/nose_hoover.rs", stale_mtime: FileTime { seconds: 1770391714, nanos: 325769683 } }))
+   0.022559419s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint: fingerprint error for sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("sang_md", ["lib"], "/home/sang/Desktop/Sandbox/rust/rust_md_work/src/lib.rs", Edition2021) }
+   0.022566985s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/sang/Desktop/Sandbox/rust/rust_md_work/target/debug/.fingerprint/sang_md-c29af7ba2edda6db/test-lib-sang_md`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
+  23: main
+  24: __libc_start_call_main
+             at ./csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+  25: __libc_start_main_impl
+             at ./csu/../csu/libc-start.c:360:3
+  26: <unknown>
+   0.066976464s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint: fingerprint dirty for sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work)/Check { test: false }/TargetInner { name: "sang_md", doc: true, ..: with_path("/home/sang/Desktop/Sandbox/rust/rust_md_work/src/main.rs", Edition2021) }
+   0.066987650s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "sang_md" })
+   0.067181402s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint: fingerprint dirty for sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work)/Check { test: true }/TargetInner { name: "sang_md", doc: true, ..: with_path("/home/sang/Desktop/Sandbox/rust/rust_md_work/src/main.rs", Edition2021) }
+   0.067185554s  INFO prepare_target{force=false package_id=sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work) target="sang_md"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "sang_md" })
+    Checking sang_md v0.1.2 (/home/sang/Desktop/Sandbox/rust/rust_md_work)
+error: could not compile `sang_md` (lib test) due to 1 previous error; 54 warnings emitted
