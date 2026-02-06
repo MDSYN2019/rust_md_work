@@ -1,6 +1,6 @@
 pub mod andersen {
 
-    use crate::lennard_jones_simulations::Particle; // crate:: always means to start at the lib.rs - so we are importing particle from Particle in lib.rs
+    use crate::lennard_jones_simulations::Particle;
     use rand::prelude::*;
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
@@ -129,5 +129,16 @@ pub mod andersen {
              */
             apply_andersen_collisions(particles, temp, nu, dt);
         }
+    }
+
+    pub fn apply_barostat_berendsen_particles(
+        particles: &mut Vec<Particle>,
+        box_length: &mut f64,
+        target_pressure: f64,
+        tau_p: f64,
+        dt: f64,
+        compressability: f64,
+    ) -> () {
+        if tau_p <= 0.0 || dt <= 0.0 || compressability <= 0.0 || box_length <= 0.0 {}
     }
 }
