@@ -1,16 +1,18 @@
 pub mod andersen {
 
-    use crate::lennard_jones_simulations::Particle;
+    use crate::cell_subdivision;
+    use crate::lennard_jones_simulations::{compute_forces_particles, Particle};
+    use nalgebra::{zero, Vector3};
     use rand::prelude::*;
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
 
     pub fn apply_thermostat_andersen_particles(
         particles: &mut Vec<Particle>,
-        box_length: f64,
         target_temperature: f64,
         dt: f64,
         t_max: f64,
+        collision_frequency: f64,
     ) -> () {
         /*
         Initialize system and compute the forces and energy
@@ -41,7 +43,7 @@ pub mod andersen {
             //run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
             //t = t + dt;
 
-            apply_andersen_collisions(particles, target_temperature, collision_frequency);
+            apply_andersen_collisions(particles, target_temperature, collision_frequency, dt);
         }
     }
 
@@ -63,7 +65,7 @@ pub mod andersen {
             return;
         }
 
-        let rng = rand::rng();
+        let mut rng = rand::rng();
         let p_coll = 1.0 - (-collision_frequency * dt).exp();
 
         for p in particles.iter_mut() {
@@ -71,13 +73,14 @@ pub mod andersen {
             // randomly select a value and change the velocity accordinglty
             if r < p_coll {
                 let sigma = (target_temperature / p.mass).sqrt();
-            }
+                let normal = Normal::new(0.0, sigma).unwrap();
 
-            p.velocity = Vector3::new(
-                normal.sample(&mut rng),
-                normal.sample(&mut rng),
-                normal.sample(&mut rng),
-            );
+                p.velocity = Vector3::new(
+                    normal.sample(&mut rng),
+                    normal.sample(&mut rng),
+                    normal.sample(&mut rng),
+                );
+            }
         }
     }
 
@@ -105,7 +108,6 @@ pub mod andersen {
             /*
             Forces should be recomputed BEFORE this half-kikc
              */
-
             let mut simulation_box = cell_subdivision::SimulationBox {
                 x_dimension: _box_length,
                 y_dimension: _box_length,
@@ -115,13 +117,12 @@ pub mod andersen {
             let mut subcells = simulation_box.create_subcells(10);
             // Store the coordinates in cells
             simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
-            compute_forces_particles(particles, box_length, &mut subcells);
+            compute_forces_particles(particles, _box_length, &mut subcells);
 
             for p in particles.iter_mut() {
                 let a_new = p.force / p.mass; // compute the new acceleration
                 p.velocity += 0.5 * a_new * dt;
             }
-
             /*
             Andersen thermostat step - randomize some velocities.
 
@@ -129,16 +130,5 @@ pub mod andersen {
              */
             apply_andersen_collisions(particles, temp, nu, dt);
         }
-    }
-
-    pub fn apply_barostat_berendsen_particles(
-        particles: &mut Vec<Particle>,
-        box_length: &mut f64,
-        target_pressure: f64,
-        tau_p: f64,
-        dt: f64,
-        compressability: f64,
-    ) -> () {
-        if tau_p <= 0.0 || dt <= 0.0 || compressability <= 0.0 || box_length <= 0.0 {}
     }
 }

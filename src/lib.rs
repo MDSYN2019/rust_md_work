@@ -75,6 +75,7 @@ extern crate assert_type_eq;
 pub mod error;
 pub mod molecule;
 pub mod parameters;
+pub mod thermostat_barostat;
 
 use std::collections::HashSet;
 
@@ -1428,7 +1429,6 @@ mod tests {
                     return; // Exit early or handle the error as needed
                 }
             };
-
         lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 1000, 0.5, 10.0, "berendsen");
         let dof = 3 * new_simulation_md.len();
         // compute the final temperature of the system
