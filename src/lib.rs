@@ -261,6 +261,7 @@ pub mod lennard_jones_simulations {
     use super::*; //
     use crate::parameters::lj_parameters::lennard_jones_potential;
     use crate::thermostat_barostat::andersen::andersen::apply_andersen_collisions;
+    use crate::thermostat_barostat::nose_hoover::nose_hoover::apply_thermostat_nose_hoover_particles;
     use error::compute_average_val;
     use nalgebra::{zero, Vector3};
     use rand::prelude::*;
@@ -1114,6 +1115,8 @@ pub mod lennard_jones_simulations {
         "[init] E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
     );
 
+        let mut xi_nose_hoover = 0.0;
+
         // --- time integration loop ---
         for _step in 0..number_of_steps {
             // 1) position update (Verlet - half step)
@@ -1163,6 +1166,14 @@ pub mod lennard_jones_simulations {
                 apply_thermostat_berendsen_particles(particles, 300.0, 0.1, dt);
             } else if thermostat == "andersen" {
                 apply_andersen_collisions(particles, 300.0, 1.0, dt);
+            } else if thermostat == "nose_hoover" {
+                apply_thermostat_nose_hoover_particles(
+                    particles,
+                    300.0,
+                    10.0,
+                    dt,
+                    &mut xi_nose_hoover,
+                );
             }
 
             // 7) recompute energy
@@ -1222,10 +1233,12 @@ pub mod lennard_jones_simulations {
         "[init systems] particle  E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
 	);
 
+        let mut xi_nose_hoover = vec![0.0; systems.len()];
+
         // --- time integration loop ---
         for _step in 0..number_of_steps {
             // For each system independently
-            for sys in systems.iter_mut() {
+            for (s, sys) in systems.iter_mut().enumerate() {
                 // Create place to store the old accelerations
                 let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(sys.atoms.len());
 
@@ -1262,6 +1275,14 @@ pub mod lennard_jones_simulations {
                 // println!("T = {system_temperature:.4}");
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
+                } else if thermostat == "nose_hoover" {
+                    apply_thermostat_nose_hoover_particles(
+                        &mut sys.atoms,
+                        300.0,
+                        10.0,
+                        dt,
+                        &mut xi_nose_hoover[s],
+                    );
                 }
             }
             // 6) recompute global energy after this step
@@ -1431,7 +1452,12 @@ mod tests {
                 }
             };
         lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 1000, 0.5, 10.0, "berendsen");
-        let dof = 3 * new_simulation_md.len();
+        let dof = match &new_simulation_md {
+            lennard_jones_simulations::InitOutput::Particles(particles) => 3 * particles.len(),
+            lennard_jones_simulations::InitOutput::Systems(systems) => {
+                3 * systems.iter().map(|sys| sys.atoms.len()).sum::<usize>()
+            }
+        };
         // compute the final temperature of the system
         let t = lennard_jones_simulations::compute_temperature(&mut new_simulation_md, dof);
         println!("Temperature is {}, and target is {}", t, t0);
