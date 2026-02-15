@@ -253,6 +253,32 @@ pub mod cell_subdivision {
                 //}
             }
         }
+
+        pub fn store_atoms_in_cells_systems(
+            &self,
+            systems: &mut Vec<System>,
+            cells: &mut Vec<MolecularCoordinates>,
+            n_cells: usize,
+        ) -> () {
+            /*
+            I don't need to store all the coordinates, just the indices of the atoms/systems
+             */
+
+            // Clear previous contents
+            for cell in cells.iter_mut() {
+                cell.atom_index.clear();
+            }
+
+            let box_size = Vector3::new(self.x_dimension, self.y_dimension, self.z_dimension);
+
+            for (i, system) in systems.iter_mut().enumerate() {
+                for particle in system.atoms.iter() {
+                    let (ix, iy, iz) = position_to_cell_3d(&particle.position, &box_size, n_cells);
+                    let cid = cell_id(ix, iy, iz, n_cells);
+                    cells[cid].atom_index.push(i);
+                }
+            }
+        }
     }
 }
 
@@ -373,6 +399,7 @@ pub mod lennard_jones_simulations {
          */
 
         let mut total_energy = 0.0;
+
         for i in 0..particles.len() {
             for j in (i + 1)..particles.len() {
                 // double loop over all coordinates in the system
@@ -1179,6 +1206,12 @@ pub mod lennard_jones_simulations {
         // Optional: your running-average helper
         compute_average_val(&mut values, 2, number_of_steps as u64);
     }
+
+    /*
+
+    Systems portion of the code
+
+     */
 
     pub fn run_md_nve_systems(
         systems: &mut Vec<System>,
