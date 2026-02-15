@@ -367,18 +367,12 @@ pub mod lennard_jones_simulations {
             */
             let a = self.force / self.mass;
             self.position += self.velocity * dt + 0.5 * a * dt * dt;
-            //self.position[0] += self.velocity[0] * dt + 0.5 * acceleration[0] * dt * dt;
-            //self.position[1] += self.velocity[1] * dt + 0.5 * acceleration[1] * dt * dt;
-            //self.position[2] += self.velocity[2] * dt + 0.5 * acceleration[2] * dt * dt;
         }
 
         fn update_velocity_verlet(&mut self, accelerations: Vector3<f64>, dt: f64) {
             /*
             Verlet scheme to update the velocity
              */
-            //self.velocity[0] += 0.5 * (old_acceleration[0] + new_acceleration[0]) * dt;
-            //self.velocity[1] += 0.5 * (old_acceleration[1] + new_acceleration[1]) * dt;
-            //self.velocity[2] += 0.5 * (old_acceleration[2] + new_acceleration[2]) * dt;
             self.velocity += 0.5 * accelerations * dt;
         }
     }
@@ -541,9 +535,7 @@ pub mod lennard_jones_simulations {
 
                 pbc_update(particles, box_length);
 
-                // TODO - apply cell subdivision
-
-                let mut simulation_box = cell_subdivision::SimulationBox {
+                let simulation_box = cell_subdivision::SimulationBox {
                     x_dimension: box_length,
                     y_dimension: box_length,
                     z_dimension: box_length,
@@ -570,22 +562,22 @@ pub mod lennard_jones_simulations {
                     );
                 }
             }
+
             // for each 'system' - actual molecule in the simulation
             InitOutput::Systems(systems) => {
                 for sys in systems.iter_mut() {
                     for s in sys.atoms.iter_mut() {
+                        // this is a vector of particles
                         println!(
                             "The original position and velocity is {:?} and {:?} for the system",
                             s.position, s.velocity
                         );
-
-                        let a_new = s.force / s.mass;
-                        s.update_velocity_verlet(a_new, dt);
+                        s.update_position_verlet(dt);
                     }
                     pbc_update(&mut sys.atoms, box_length);
                 }
 
-                let mut simulation_box = cell_subdivision::SimulationBox {
+                let simulation_box = cell_subdivision::SimulationBox {
                     x_dimension: box_length,
                     y_dimension: box_length,
                     z_dimension: box_length,
@@ -595,6 +587,19 @@ pub mod lennard_jones_simulations {
                 let mut subcells = simulation_box.create_subcells(10);
                 // Store the coordinates in cells
                 simulation_box.store_atoms_in_cells_systems(systems, &mut subcells, 10);
+
+                // update the velocity
+                for sys in systems.iter_mut() {
+                    for s in sys.atoms.iter_mut() {
+                        let a_new = s.force / s.mass; // compu
+                        s.update_velocity_verlet(a_new, dt);
+
+                        println!(
+                            "After a iteration step, the position and velocity is {:?} and {:?} ",
+                            s.position, s.velocity
+                        );
+                    }
+                }
             }
         }
     }
@@ -648,10 +653,10 @@ pub mod lennard_jones_simulations {
                 let cell_r = cell_dist.norm();
                 if cell_r <= cell_limit {
                     let cell_match_instance = vec![i as i32, j as i32];
-                    println!(
-                        " We have the following cell match instance {:?}",
-                        cell_match_instance
-                    );
+                    //println!(
+                    //    " We have the following cell match instance {:?}",
+                    //    cell_match_instance
+                    //);
                     cell_match_storage.push(cell_match_instance);
                 }
             }
@@ -692,43 +697,40 @@ pub mod lennard_jones_simulations {
                 }
             }
         }
-
-        // TODO
-
-        //for i in 0..n {
-        //    for j in (i + 1)..n {
-        //        let r_vec = particles[j].position - particles[i].position;
-        //        let r_mic = minimum_image_convention(r_vec, box_length);
-        //        let r = r_mic.norm(); // compute the distance
-        //
-        //        if r == 0.0 {
-        //            continue;
-        //        }
-        //
-        //        // mix params (Lorentz-Berthelot)
-        //        let si = particles[i].lj_parameters.sigma;
-        //        let ei = particles[i].lj_parameters.epsilon;
-        //        let sj = particles[j].lj_parameters.sigma;
-        //        let ej = particles[j].lj_parameters.epsilon;
-        //        let sigma = 0.5 * (si + sj);
-        //        let epsilon = (ei * ej).sqrt();
-        //        let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
-        //        let f_vec = (r_mic / r) * f_mag; // along r-hat
-        //
-        //        // action = -reaction
-        //        particles[i].force -= f_vec;
-        //        particles[j].force += f_vec;
-        //        println!(
-        //            "The forces are {:?} {:?}",
-        //            particles[i].force, particles[j].force
-        //        );
-        //    }
-        //}
-        // apply bonded terms
-        //let bonded_terms = apply_bonded_forces_and_energy(particles, bonds);
     }
 
-    pub fn compute_forces_system(
+    fn compute_bonded_forces(atoms: &mut [Particle], bonds: &[Bond], box_length: f64) -> () {
+        // DO NOT zero here if you plan to add LJ too.
+        // Instead: caller zeros forces once, then adds bonded + LJ, etc.
+
+        for b in bonds {
+            let rij = atoms[b.atom1].position - atoms[b.atom2].position;
+            let rij = minimum_image_convention(rij, box_length);
+            let r = safe_norm(rij.norm());
+            let dr = r - b.r0;
+
+            // force magnitude (harmonic)
+            let f_mag = -b.k * dr;
+            let f_vec = (rij / r) * f_mag;
+
+            atoms[b.atom1].force += f_vec;
+            atoms[b.atom2].force -= f_vec;
+        }
+    }
+
+    fn compute_bonded_energy(atoms: &[Particle], bonds: &[Bond], box_length: f64) -> f64 {
+        let mut e = 0.0;
+        for b in bonds {
+            let rij = atoms[b.atom1].position - atoms[b.atom2].position;
+            let rij = minimum_image_convention(rij, box_length);
+            let r = safe_norm(rij.norm());
+            let dr = r - b.r0;
+            e += 0.5 * b.k * dr * dr;
+        }
+        e
+    }
+
+    pub fn compute_bonded_forces_system(
         atoms: &mut Vec<Particle>,
         bonds: &[Bond],
         box_length: f64,
@@ -739,6 +741,8 @@ pub mod lennard_jones_simulations {
         for a in atoms.iter_mut() {
             a.force = Vector3::zeros();
         }
+        // compute the intermolecular forces - TODO - tbis should omitt
+        // intramolecular forces
 
         apply_bonded_forces_and_energy(atoms, bonds, box_length)
     }
@@ -953,7 +957,6 @@ pub mod lennard_jones_simulations {
             let mut subcells = simulation_box.create_subcells(10);
             // Store the coordinates in cells
             simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
-
             // Compute the forces in the system
             compute_forces_particles(particles, box_length, &mut subcells);
             // switches to 2
@@ -1137,9 +1140,8 @@ pub mod lennard_jones_simulations {
         // Create the subcells - here we have used a subdivision of 10 for the cells
         let mut subcells = simulation_box.create_subcells(10);
         // Store the coordinates in cells
-        simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+        simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10); // --- initial forces and energy ---
 
-        // --- initial forces and energy ---
         compute_forces_particles(particles, box_length, &mut subcells);
 
         let mut kinetic_energy = 0.0;
@@ -1181,8 +1183,12 @@ pub mod lennard_jones_simulations {
             // 2) PBC
             pbc_update(particles, box_length);
 
+            //
+
+            simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+
             // 3) recompute forces (LJ)
-            //compute_forces_particles(particles, box_length);
+            compute_forces_particles(particles, box_length, &mut subcells);
 
             // 4) velocity update (Verlet - second half step)
             for p in particles.iter_mut() {
@@ -1234,6 +1240,9 @@ pub mod lennard_jones_simulations {
     ) {
         let mut final_summary = SimulationSummary { energy: 0.0 };
         let mut values: Vec<f32> = Vec::new();
+        let mut total_energy = 0.0;
+        let mut kinetic_energy = 0.0;
+        let mut potential_energy = 0.0;
 
         // Create the subcells for the simulation box
         let mut simulation_box = cell_subdivision::SimulationBox {
@@ -1244,28 +1253,19 @@ pub mod lennard_jones_simulations {
         // Create the subcells - here we have used a subdivision of 10 for the cells
         let mut subcells = simulation_box.create_subcells(10);
         // Store the coordinates in cells
-        //simulation_box.store_atoms_in_cells_systems(systems, &mut subcells);
-
+        simulation_box.store_atoms_in_cells_systems(systems, &mut subcells, 10);
         // --- initial forces and energy ---
-        // bonded forces
-        for sys in systems.iter_mut() {
-            compute_forces_system(&mut sys.atoms, &sys.bonds, box_length);
-        }
-        // initial energy over all systems
-        let mut kinetic_energy = 0.0;
-        let mut potential_energy = 0.0;
-        for sys in systems.iter_mut() {
-            // loop over each molecule (system) in the simulations
-            for a in sys.atoms.iter() {
-                kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
-            }
-            potential_energy += site_site_energy_calculation(&mut sys.atoms, box_length);
-        }
 
-        let mut total_energy = kinetic_energy + potential_energy;
         println!(
         "[init systems] particle  E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
 	);
+
+        for sys in systems.iter_mut() {
+            for a in sys.atoms.iter_mut() {
+                a.force = Vector3::zeros();
+            }
+            compute_bonded_forces(&mut sys.atoms, &sys.bonds, box_length);
+        }
 
         // --- time integration loop ---
         for _step in 0..number_of_steps {
@@ -1292,8 +1292,14 @@ pub mod lennard_jones_simulations {
                 // 3) PBC
                 pbc_update(&mut sys.atoms, box_length);
 
-                // 4) recompute forces (bonded; you can add LJ here too if you want)
-                compute_forces_system(&mut sys.atoms, &sys.bonds, box_length);
+                // recompute forces (bonded; you can add LJ here too if you want) - at the moment, only
+                // accounting for the intramolecular forces, not between the molecules
+
+                for a in sys.atoms.iter_mut() {
+                    a.force = Vector3::zeros();
+                }
+
+                compute_bonded_forces(&mut sys.atoms, &sys.bonds, box_length);
 
                 // 5) velocity update (Verlet - second half step)
                 for a in sys.atoms.iter_mut() {
@@ -1309,24 +1315,23 @@ pub mod lennard_jones_simulations {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
                 }
             }
-            // 6) recompute global energy after this step
+
+            // recompute global energy after this step
             kinetic_energy = 0.0;
             potential_energy = 0.0;
-
+            // bonded forces
             for sys in systems.iter_mut() {
-                // sum the kinetic energy component
                 for a in sys.atoms.iter() {
                     kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
                 }
-                // sum the potential energy component
-                potential_energy += site_site_energy_calculation(&mut sys.atoms, box_length);
+                potential_energy += compute_bonded_energy(&sys.atoms, &sys.bonds, box_length);
+                // bonded forces
+                //potential_energy += site_site_energy_calculation(&mut sys.atoms, box_length);
             }
-            // compute the total energy
+
             total_energy = kinetic_energy + potential_energy;
-            final_summary.energy = total_energy;
             values.push(total_energy as f32); // compute the total energy per timestep
             println!("step {_step}: E_tot = {total_energy:.6}, E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}");
-            //println!("System T = {system_temperature:.4}");
         }
 
         compute_average_val(&mut values, 2, number_of_steps as u64);
@@ -1348,80 +1353,6 @@ pub mod lennard_jones_simulations {
             }
         }
     }
-
-    //pub fn run_md_nve(
-    //    state: &mut InitOutput,
-    //    number_of_steps: i32,
-    //    dt: f64,
-    //    box_length: f64,
-    //    thermostat: &str,
-    //) {
-    //    /*
-    //    We are now equipt to implement a NVE molecular dynamics simulations.
-    //    define time step and number of steps
-    //     */
-    //    let mut final_summary = SimulationSummary { energy: 0.0 };
-    //
-    //    let lj_params_new = LJParameters {
-    //        epsilon: 1.0,
-    //        sigma: 4.0,
-    //        number_of_atoms: 2,
-    //    };
-    //
-    //    let mut values: Vec<f32> = Vec::new();
-    //
-    //    // Compute the initial total energy of the system
-    //    let initial_energy = compute_total_energy_and_print(state, box_length);
-    //    // Loop over the total system for number_of_steps
-    //    for i in 0..number_of_steps {
-    //        // update periodic boundary conditions
-    //
-    //        match state {
-    //            // In the case we have a system of particles
-    //            InitOutput::Particles(particles) => {
-    //                pbc_update(particles, box_length);
-    //                // update velocities using the verlet format
-    //                run_verlet_update_nve(state, 0.05, box_length);
-    //                let dof = 3 * particles.len().saturating_sub(3);
-    //                let system_temperature = compute_temperature(state, dof);
-    //                println!("The temperature of the system is {}", system_temperature);
-    //
-    //                if thermostat == "berendsen" {
-    //                    apply_thermostat_berendsen(state, 300.0, 0.1, 0.05);
-    //                } else {
-    //                    apply_thermostat(state, 300.0);
-    //                }
-    //                let total_energy = compute_total_energy_and_print(state, box_length);
-    //                // update the summary
-    //
-    //                final_summary.energy = total_energy;
-    //                values.push(total_energy as f32);
-    //            } //compute_average_val(&mut values, 2, number_of_steps as u64);
-    //
-    //            InitOutput::Systems(systems) => {
-    //                for sys in systems.iter_mut() {
-    //                    pbc_update(&mut sys.atoms, box_length);
-    //                    // update velocities using the verlet format
-    //                    run_verlet_update_nve(state, 0.05, box_length);
-    //                    let dof = 3 * sys.atoms.len().saturating_sub(3);
-    //                    let system_temperature = compute_temperature(state, dof);
-    //                    println!("The temperature of the system is {}", system_temperature);
-    //
-    //                    if thermostat == "berendsen" {
-    //                        apply_thermostat_berendsen(state, 300.0, 0.1, 0.05);
-    //                    } else {
-    //                        apply_thermostat(state, 300.0);
-    //                    }
-    //                    let total_energy = compute_total_energy_and_print(state, box_length);
-    //                    // update the summary
-    //
-    //                    final_summary.energy = total_energy;
-    //                    values.push(total_energy as f32);
-    //                } //compute_average_val(&mut values, 2, number_of_steps as u64);
-    //            }
-    //        }
-    //    }
-    //}
 }
 
 #[cfg(test)]
