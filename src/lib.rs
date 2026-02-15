@@ -551,6 +551,7 @@ pub mod lennard_jones_simulations {
 
                 // Create the subcells - here we have used a subdivision of 10 for the cells
                 let mut subcells = simulation_box.create_subcells(10);
+
                 // Store the coordinates in cells
                 simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
                 compute_forces_particles(particles, box_length, &mut subcells);
@@ -583,6 +584,17 @@ pub mod lennard_jones_simulations {
                     }
                     pbc_update(&mut sys.atoms, box_length);
                 }
+
+                let mut simulation_box = cell_subdivision::SimulationBox {
+                    x_dimension: box_length,
+                    y_dimension: box_length,
+                    z_dimension: box_length,
+                };
+
+                // Create the subcells - here we have used a subdivision of 10 for the cells
+                let mut subcells = simulation_box.create_subcells(10);
+                // Store the coordinates in cells
+                simulation_box.store_atoms_in_cells_systems(systems, &mut subcells, 10);
             }
         }
     }
