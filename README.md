@@ -22,6 +22,8 @@ Implements Lennard-Jones (LJ) interactions, bonded forces, velocity-Verlet time 
 ### 🌡 Thermostat Algorithms
 - Maxwell–Boltzmann initial velocity sampling  
 - Berendsen thermostat (velocity rescaling)  
+- Nose-Hoover thermostat (extended-systems coupling)
+- Nose-Hoover isotropic barostat (volume/position scaling)
 - NVE and pseudo-NVT control  
 - Temperature calculation from kinetic energy  
 
