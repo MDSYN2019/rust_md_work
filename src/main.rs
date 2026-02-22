@@ -3,19 +3,9 @@
 //! ----------------------
 //!
 //! ------------------------
-//! Last Updated: 15/02/2026
+//! Last Updated: 22/02/2026
 //! ------------------------
 //!
-
-/*
-
-The HF-self_consistent_field is the standard first-principles
-approach for computing approximate quantum mechanical eigenstates
-of interacting fermion systems.
-
-Such systems include electrons in atoms, molecules, and condensed matter. Protons
-and neutrons in nuclei, and nuclear matter.
-*/
 
 #![allow(unused_variables)] // ensure that unused variables do not cause an error when compiling this program
                             // relax compiler warnings while working through ideas
