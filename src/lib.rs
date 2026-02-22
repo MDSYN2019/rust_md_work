@@ -142,6 +142,8 @@ pub mod cell_subdivision {
         (ix * n + iy) * n + iz
     }
 
+    //fn cell_id_to_3d
+
     fn distance_to(this: &Vector3<f64>, other: &Vector3<f64>) -> f64 {
         // Calculate the distance using the Euclidean distance formula
         ((this.x - other.x).powi(2) + (this.y - other.y).powi(2) + (this.z - other.z).powi(2))
@@ -287,7 +289,10 @@ pub mod lennard_jones_simulations {
     use super::*; //
     use crate::parameters::lj_parameters::lennard_jones_potential;
     use crate::thermostat_barostat::andersen::andersen::apply_andersen_collisions;
+    use crate::thermostat_barostat::nose_hoover::nose_hoover::apply_thermostat_nose_hoover_particles;
+
     use error::compute_average_val;
+
     use nalgebra::{zero, Vector3};
     use rand::prelude::*;
     use rand::Rng;
@@ -365,8 +370,8 @@ pub mod lennard_jones_simulations {
             Verlet scheme to change the position
             Use the verlet scheme to change the velocity
             */
-            let a = self.force / self.mass;
-            self.position += self.velocity * dt + 0.5 * a * dt * dt;
+            //let a = self.force / self.mass;
+            self.position += self.velocity * dt; //+ 0.5 * a * dt * dt;
         }
 
         fn update_velocity_verlet(&mut self, accelerations: Vector3<f64>, dt: f64) {
@@ -405,7 +410,7 @@ pub mod lennard_jones_simulations {
 
                 // Using Lorentz-Bethelot mixing rules
                 let computed_sigma = (sigma_i + sigma_j) / 2.0;
-                let computed_epsilon = (epsilon_i + epsilon_j).sqrt();
+                let computed_epsilon = (epsilon_i * epsilon_j).sqrt();
                 let r_vec = particles[j].position - particles[i].position; // We have already applied PBC to wrap the positions
                 let r_vec_mic = minimum_image_convention(r_vec, box_length); // minimum image convention is used for computing the true closest distance between the partcle i and j, through the images rather than take the longest distance from within the same image
                 let r = r_vec_mic.norm();
@@ -419,7 +424,7 @@ pub mod lennard_jones_simulations {
     }
 
     pub fn set_molecular_positions_and_velocities(system_mol: &mut InitOutput, temp: f64) -> () {
-        let mut rng = rand::rng();
+        let mut rng = rand::thread_rng();
         // loop over each moleucle
 
         // Create a normal distribution with mean = 0, std = sigma
@@ -469,7 +474,7 @@ pub mod lennard_jones_simulations {
          */
         let mut vector_positions: Vec<Particle> = Vec::new();
         let mut vector_system_positions: Vec<System> = Vec::new();
-        let mut rng = rand::rng();
+        let mut rng = rand::thread_rng();
         // Create the number of atoms in the system with the system as necessary
         if !use_atom {
             for index in 0..number_of_atoms {
@@ -479,9 +484,9 @@ pub mod lennard_jones_simulations {
                     // create position for the atom in question
                     position: Vector3::new(
                         // generate x y z position values between -10 and 10
-                        rng.random_range(-box_dim_max..box_dim_max),
-                        rng.random_range(-box_dim_max..box_dim_max),
-                        rng.random_range(-box_dim_max..box_dim_max),
+                        rng.random_range(0.0..10.0), //TODO - need to add in box_length as a parameter
+                        rng.random_range(0.0..10.0), // ditto
+                        rng.random_range(0.0..10.0), // ditto
                     ),
 
                     // create velocity for atom in question
@@ -523,86 +528,86 @@ pub mod lennard_jones_simulations {
 
     pub fn implement_shake() -> () {}
 
-    pub fn run_verlet_update_nve(state: &mut InitOutput, dt: f64, box_length: f64) -> () {
-        /*
-        Update the position and velocity of the particle using the verlet scheme
-         */
-        match state {
-            InitOutput::Particles(particles) => {
-                for particle in particles.iter_mut() {
-                    particle.update_position_verlet(dt);
-                }
-
-                pbc_update(particles, box_length);
-
-                let simulation_box = cell_subdivision::SimulationBox {
-                    x_dimension: box_length,
-                    y_dimension: box_length,
-                    z_dimension: box_length,
-                };
-
-                // Create the subcells - here we have used a subdivision of 10 for the cells
-                let mut subcells = simulation_box.create_subcells(10);
-
-                // Store the coordinates in cells
-                simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
-                compute_forces_particles(particles, box_length, &mut subcells);
-
-                for particle in particles.iter_mut() {
-                    println!(
-                        "The original position and velocity is {:?} and {:?} ",
-                        particle.position, particle.velocity
-                    );
-                    let a_new = particle.force / particle.mass;
-                    particle.update_velocity_verlet(a_new, dt);
-
-                    println!(
-                        "After a iteration step, the position and velocity is {:?} and {:?} ",
-                        particle.position, particle.velocity
-                    );
-                }
-            }
-
-            // for each 'system' - actual molecule in the simulation
-            InitOutput::Systems(systems) => {
-                for sys in systems.iter_mut() {
-                    for s in sys.atoms.iter_mut() {
-                        // this is a vector of particles
-                        println!(
-                            "The original position and velocity is {:?} and {:?} for the system",
-                            s.position, s.velocity
-                        );
-                        s.update_position_verlet(dt);
-                    }
-                    pbc_update(&mut sys.atoms, box_length);
-                }
-
-                let simulation_box = cell_subdivision::SimulationBox {
-                    x_dimension: box_length,
-                    y_dimension: box_length,
-                    z_dimension: box_length,
-                };
-
-                // Create the subcells - here we have used a subdivision of 10 for the cells
-                let mut subcells = simulation_box.create_subcells(10);
-                // Store the coordinates in cells
-                simulation_box.store_atoms_in_cells_systems(systems, &mut subcells, 10);
-
-                // update the velocity
-                for sys in systems.iter_mut() {
-                    for s in sys.atoms.iter_mut() {
-                        let a_new = s.force / s.mass; // compu
-                        s.update_velocity_verlet(a_new, dt);
-
-                        println!(
-                            "After a iteration step, the position and velocity is {:?} and {:?} ",
-                            s.position, s.velocity
-                        );
-                    }
-                }
-            }
-        }
-    }
+    //pub fn run_verlet_update_nve(state: &mut InitOutput, dt: f64, box_length: f64) -> () {
+    //    /*
+    //    Update the position and velocity of the particle using the verlet scheme
+    //     */
+    //    match state {
+    //        InitOutput::Particles(particles) => {
+    //            for particle in particles.iter_mut() {
+    //                particle.update_position_verlet(dt);
+    //            }
+    //
+    //            pbc_update(particles, box_length);
+    //
+    //            let simulation_box = cell_subdivision::SimulationBox {
+    //                x_dimension: box_length,
+    //                y_dimension: box_length,
+    //                z_dimension: box_length,
+    //            };
+    //
+    //            // Create the subcells - here we have used a subdivision of 10 for the cells
+    //            let mut subcells = simulation_box.create_subcells(10);
+    //
+    //            // Store the coordinates in cells
+    //            simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+    //            compute_forces_particles(particles, box_length, &mut subcells);
+    //
+    //            for particle in particles.iter_mut() {
+    //                println!(
+    //                    "The original position and velocity is {:?} and {:?} ",
+    //                    particle.position, particle.velocity
+    //                );
+    //                let a_new = particle.force / particle.mass;
+    //                particle.update_velocity_verlet(a_new, dt);
+    //
+    //                println!(
+    //                    "After a iteration step, the position and velocity is {:?} and {:?} ",
+    //                    particle.position, particle.velocity
+    //                );
+    //            }
+    //        }
+    //
+    //        // for each 'system' - actual molecule in the simulation
+    //        InitOutput::Systems(systems) => {
+    //            for sys in systems.iter_mut() {
+    //                for s in sys.atoms.iter_mut() {
+    //                    // this is a vector of particles
+    //                    println!(
+    //                        "The original position and velocity is {:?} and {:?} for the system",
+    //                        s.position, s.velocity
+    //                    );
+    //                    s.update_position_verlet(dt);
+    //                }
+    //                pbc_update(&mut sys.atoms, box_length);
+    //            }
+    //
+    //            let simulation_box = cell_subdivision::SimulationBox {
+    //                x_dimension: box_length,
+    //                y_dimension: box_length,
+    //                z_dimension: box_length,
+    //            };
+    //
+    //            // Create the subcells - here we have used a subdivision of 10 for the cells
+    //            let mut subcells = simulation_box.create_subcells(10);
+    //            // Store the coordinates in cells
+    //            simulation_box.store_atoms_in_cells_systems(systems, &mut subcells, 10);
+    //
+    //            // update the velocity
+    //            for sys in systems.iter_mut() {
+    //                for s in sys.atoms.iter_mut() {
+    //                    let a_new = s.force / s.mass; // compu
+    //                    s.update_velocity_verlet(a_new, dt);
+    //
+    //                    println!(
+    //                        "After a iteration step, the position and velocity is {:?} and {:?} ",
+    //                        s.position, s.velocity
+    //                    );
+    //                }
+    //            }
+    //        }
+    //    }
+    //}
 
     pub fn apply_bond_force(particles: &mut [Particle], b: &Bond, box_length: f64) -> f64 {
         let rij = particles[b.atom1].position - particles[b.atom2].position;
@@ -747,19 +752,49 @@ pub mod lennard_jones_simulations {
         apply_bonded_forces_and_energy(atoms, bonds, box_length)
     }
 
+    // -- temperature related computations
+
+    pub fn kinetic_energy_particles(particles: &[Particle]) -> f64 {
+        particles
+            .iter()
+            .map(|p| 0.5 * p.mass * p.velocity.norm_squared())
+            .sum()
+    }
+
     pub fn compute_temperature_particles(particles: &[Particle], dof: usize) -> f64 {
         // TODO - need to actually implement the boltzmann constant for computing the temperature
         if dof == 0 {
             return 0.0;
         }
+        2.0 * kinetic_energy_particles(particles) / (dof as f64)
+    }
 
-        let mut total_kinetic_energy = 0.0;
-        for p in particles.iter() {
-            let v2 = p.velocity.norm_squared();
-            total_kinetic_energy += 0.5 * p.mass * v2;
-        }
+    pub fn compute_temperature(state: &mut InitOutput, dof: usize) -> f64 {
+        /*
+                    Sums the kinetic energy over the whole system
 
-        2.0 * total_kinetic_energy / (dof as f64)
+                K = total (0.5 * m * v ^ 0.5)
+
+            T = 2K / (K_b (dof))
+
+        // TODO - need to actually implement the boltzmann constant for computing the temperature
+
+         */
+
+        let total_ke = match state {
+            InitOutput::Particles(p) => kinetic_energy_particles(p),
+            InitOutput::Systems(systems) => {
+                if dof == 0 {
+                    return 0.0;
+                }
+                systems
+                    .iter()
+                    .map(|sys| kinetic_energy_particles(&sys.atoms))
+                    .sum()
+            }
+        };
+
+        2.0 * total_ke / (dof as f64)
     }
 
     pub fn compute_pressure_particles(particles: &[Particle], box_length: f64) -> f64 {
@@ -797,7 +832,7 @@ pub mod lennard_jones_simulations {
 
                 // need to remind myself which mixing rules are these
                 let sigma = 0.5 * (si + sj);
-                let epsilon = (ei + ej).sqrt();
+                let epsilon = (ei * ej).sqrt();
 
                 let f_mag = lennard_jones_force_scalar(r, sigma, epsilon); // pairwise force
                 let f_vec = (r_mic / r) * f_mag; //we get the unit vector, and we get the radial force magnitude
@@ -805,34 +840,34 @@ pub mod lennard_jones_simulations {
                 virial += r_mic.dot(&f_vec);
             }
         }
+        /*
+        Compute instantaneous pressure using the virial equation of state.
 
-        (n as f64 * temperature + virial) / (volume * 3.0)
-    }
+        P = (N T)/V + (1/(3V)) * Σ_{i<j} (r_ij · F_ij)
 
-    pub fn compute_temperature(state: &mut InitOutput, dof: usize) -> f64 {
-        match state {
-            InitOutput::Particles(p) => compute_temperature_particles(p, dof),
-            InitOutput::Systems(systems) => {
-                if dof == 0 {
-                    return 0.0;
-                }
+        where:
+        - N      = number of particles
+        - T      = instantaneous temperature (from kinetic energy via equipartition)
+        - V      = simulation box volume
+        - r_ij   = minimum-image displacement vector between particles i and j
+        - F_ij   = force on particle i due to particle j
+        - Σ_{i<j} ensures each pair interaction is counted once
 
-                let mut total_ke = 0.0;
-                let mut total_atoms = 0usize;
+        Interpretation:
+        - First term: ideal gas contribution from kinetic motion
+        P_ideal = N T / V
 
-                for sys in systems.iter_mut() {
-                    for a in sys.atoms.iter() {
-                        total_ke += 0.5 * a.mass * a.velocity.norm_squared();
-                        total_atoms += 1;
-                    }
-                }
-                if total_atoms == 0 {
-                    0.0
-                } else {
-                    2.0 * total_ke / (dof as f64)
-                }
-            }
-        }
+        - Second term: configurational (virial) contribution from interactions
+        P_virial = (1/(3V)) Σ r_ij · F_ij
+
+        Assumptions:
+        - Reduced units with k_B = 1
+        - Pairwise-additive forces (Lennard-Jones here)
+        - Periodic boundary conditions using minimum image convention
+
+        Total pressure:
+         */
+        (n as f64 * temperature) / volume + virial / (3.0 * volume)
     }
 
     pub fn apply_thermostat(state: &mut InitOutput, target_temperature: f64) {
@@ -1098,7 +1133,7 @@ pub mod lennard_jones_simulations {
             probability ~ nu * dt ( valid when nu * dt is small; otherwise use 1 - exp(-nu * dt)
              */
 
-            let mut rng = rand::rng();
+            let mut rng = rand::thread_rng();
             let p_coll = nu * dt;
 
             for p in particles.iter_mut() {
@@ -1155,6 +1190,9 @@ pub mod lennard_jones_simulations {
         "[init] E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
     );
 
+        // only used if we are using nose_hoover
+        let mut xi_nose_hoover = 0.0;
+
         // --- time integration loop ---
         for _step in 0..number_of_steps {
             // 1) position update (Verlet - half step)
@@ -1171,33 +1209,28 @@ pub mod lennard_jones_simulations {
                 atom.velocity += 0.5 * a_o * dt;
             }
 
-            // 2) position update
+            // 2) position update - needs to use the velocity that has been
+            // updated using the half step method
             for atom in particles.iter_mut() {
-                atom.position += atom.velocity * dt;
+                atom.update_position_verlet(dt);
             }
 
-            //for p in particles.iter_mut() {
-            //    p.update_position_verlet(dt);
-            //}
-
-            // 2) PBC
+            // 3) PBC
             pbc_update(particles, box_length);
-
-            //
 
             simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
 
-            // 3) recompute forces (LJ)
+            // 4) recompute forces (LJ)
             compute_forces_particles(particles, box_length, &mut subcells);
 
-            // 4) velocity update (Verlet - second half step)
+            // 5) velocity update (Verlet - second half step)
             for p in particles.iter_mut() {
                 let a_new = p.force / p.mass;
                 // where we do computing of the verlet
                 p.update_velocity_verlet(a_new, dt);
             }
 
-            // 5) measure temperature
+            // 6) measure temperature
             let dof = 3 * particles.len();
             let system_temperature = compute_temperature_particles(&particles, dof);
 
@@ -1208,6 +1241,14 @@ pub mod lennard_jones_simulations {
                 apply_thermostat_berendsen_particles(particles, 300.0, 0.1, dt);
             } else if thermostat == "andersen" {
                 apply_andersen_collisions(particles, 300.0, 1.0, dt);
+            } else if thermostat == "nose_hoover" {
+                apply_thermostat_nose_hoover_particles(
+                    particles,
+                    300.0,
+                    10.0,
+                    dt,
+                    &mut xi_nose_hoover,
+                )
             }
 
             // 7) recompute energy
@@ -1267,10 +1308,13 @@ pub mod lennard_jones_simulations {
             compute_bonded_forces(&mut sys.atoms, &sys.bonds, box_length);
         }
 
+        // this is only used if we apply nose hoover
+        let mut xi_nose_hoover = vec![0.0; systems.len()];
+
         // --- time integration loop ---
         for _step in 0..number_of_steps {
             // For each system independently
-            for sys in systems.iter_mut() {
+            for (s, sys) in systems.iter_mut().enumerate() {
                 // Create place to store the old accelerations
                 let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(sys.atoms.len());
 
@@ -1278,15 +1322,13 @@ pub mod lennard_jones_simulations {
                     a_old.push(a.force / a.mass);
                 }
 
-                // 1) position update (Verlet - half step)
-
                 for (atom, a_o) in sys.atoms.iter_mut().zip(a_old.iter()) {
                     atom.velocity += 0.5 * a_o * dt;
                 }
 
                 // 2) drift positions
                 for atom in sys.atoms.iter_mut() {
-                    atom.position += atom.velocity * dt;
+                    atom.update_position_verlet(dt);
                 }
 
                 // 3) PBC
@@ -1313,6 +1355,14 @@ pub mod lennard_jones_simulations {
                 // println!("T = {system_temperature:.4}");
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
+                } else if thermostat == "nose_hoover" {
+                    apply_thermostat_nose_hoover_particles(
+                        &mut sys.atoms,
+                        300.0,
+                        10.0,
+                        dt,
+                        &mut xi_nose_hoover[s],
+                    )
                 }
             }
 
@@ -1407,7 +1457,14 @@ mod tests {
                 }
             };
         lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 1000, 0.5, 10.0, "berendsen");
-        let dof = 3 * new_simulation_md.len();
+
+        let dof = match &new_simulation_md {
+            lennard_jones_simulations::InitOutput::Particles(particles) => 3 * particles.len(),
+            &lennard_jones_simulations::InitOutput::Systems(systems) => {
+                3 * systems.iter().map(|sys| sys.atoms.len()).sum::<usize>()
+            }
+        };
+        //let dof = 3 * new_simulation_md.len();
         // compute the final temperature of the system
         let t = lennard_jones_simulations::compute_temperature(&mut new_simulation_md, dof);
         println!("Temperature is {}, and target is {}", t, t0);
