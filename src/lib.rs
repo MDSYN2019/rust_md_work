@@ -118,7 +118,6 @@ fn dedup_permutation(v: &mut Vec<Vec<i32>>) {
 
 pub mod cell_subdivision {
 
-    use super::*; //
     use nalgebra::Vector3;
     use crate::lennard_jones_simulations::Particle;
     use crate::molecule::molecule::System;
@@ -138,11 +137,6 @@ pub mod cell_subdivision {
 
     //fn cell_id_to_3d
 
-    fn distance_to(this: &Vector3<f64>, other: &Vector3<f64>) -> f64 {
-        // Calculate the distance using the Euclidean distance formula
-        ((this.x - other.x).powi(2) + (this.y - other.y).powi(2) + (this.z - other.z).powi(2))
-            .sqrt()
-    }
 
     fn position_to_cell_3d(
         pos: &Vector3<f64>,
@@ -322,7 +316,7 @@ pub mod lennard_jones_simulations {
 
     #[derive(Clone)]
     pub struct SimulationSummary {
-        energy: f64,
+        pub energy: f64,
     }
 
     pub enum InitOutput {
@@ -336,13 +330,13 @@ pub mod lennard_jones_simulations {
     }
 
     impl Particle {
-        fn distance(&self, other: &Particle) -> f64 {
+        pub fn distance(&self, other: &Particle) -> f64 {
             // Compute the distance between two particles
             (self.position - other.position).norm()
         }
 
         pub fn maxwellboltzmannvelocity(&mut self, temp: f64, mass: f64, _v_max: f64) {
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
 
             // Standard deviation based on MB distribution
             let sigma_mb = (temp / mass).sqrt();
@@ -417,7 +411,7 @@ pub mod lennard_jones_simulations {
     }
 
     pub fn set_molecular_positions_and_velocities(system_mol: &mut InitOutput, temp: f64) -> () {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         // loop over each moleucle
 
         // Create a normal distribution with mean = 0, std = sigma
@@ -467,7 +461,7 @@ pub mod lennard_jones_simulations {
          */
         let mut vector_positions: Vec<Particle> = Vec::new();
         let mut vector_system_positions: Vec<System> = Vec::new();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         // Create the number of atoms in the system with the system as necessary
         if !use_atom {
             for index in 0..number_of_atoms {
@@ -662,11 +656,11 @@ pub mod lennard_jones_simulations {
         // loop over the cells
         for cell_i in 0..cell_match_storage.len() {
             // select cell entry
-            let cell_I = cell_match_storage[cell_i][0];
-            let cell_II = cell_match_storage[cell_i][1];
+            let cell_i_idx = cell_match_storage[cell_i][0];
+            let cell_ii_idx = cell_match_storage[cell_i][1];
 
-            for i_index in cells[cell_I as usize].atom_index.iter() {
-                for j_index in cells[cell_II as usize].atom_index.iter() {
+            for i_index in cells[cell_i_idx as usize].atom_index.iter() {
+                for j_index in cells[cell_ii_idx as usize].atom_index.iter() {
                     let r_vec = particles[*i_index].position - particles[*j_index].position;
                     let r_mic = minimum_image_convention(r_vec, box_length);
                     let r = r_mic.norm(); // compute the distance
@@ -1122,7 +1116,7 @@ pub mod lennard_jones_simulations {
             probability ~ nu * dt ( valid when nu * dt is small; otherwise use 1 - exp(-nu * dt)
              */
 
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let p_coll = nu * dt;
 
             for p in particles.iter_mut() {
@@ -1398,7 +1392,7 @@ mod tests {
     // lennard-jones double loop test
     #[test]
     fn test_double_loop() {
-        let lj_params = lennard_jones_simulations::LJParameters {
+        let _lj_params = lennard_jones_simulations::LJParameters {
             epsilon: 1.0,
             sigma: 1.0,
             number_of_atoms: 2,
@@ -1411,9 +1405,9 @@ mod tests {
 
     #[test]
     fn test_lennard_jones() {
-        let sigma = 1.0;
-        let epsilon = 1.0;
-        let lj_params_new = lennard_jones_simulations::LJParameters {
+        let _sigma = 1.0;
+        let _epsilon = 1.0;
+        let _lj_params_new = lennard_jones_simulations::LJParameters {
             epsilon: 1.0,
             sigma: 1.0,
             number_of_atoms: 10,
@@ -1446,7 +1440,7 @@ mod tests {
 
         let dof = match &new_simulation_md {
             lennard_jones_simulations::InitOutput::Particles(particles) => 3 * particles.len(),
-            &lennard_jones_simulations::InitOutput::Systems(systems) => {
+            lennard_jones_simulations::InitOutput::Systems(systems) => {
                 3 * systems.iter().map(|sys| sys.atoms.len()).sum::<usize>()
             }
         };

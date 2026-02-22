@@ -1,13 +1,9 @@
 pub mod berendsen {
 
-    use crate::cell_subdivision;
     use crate::lennard_jones_simulations::compute_pressure_particles; // using the compute_pressure_particles from lib.rs
     use crate::lennard_jones_simulations::Particle; // using the Particle struct from the lennard_jones_simulation mod from lib.rs
 
     // statistical modules
-    use rand::prelude::*;
-    use rand::Rng;
-    use rand_distr::{Distribution, Normal};
 
     pub fn apply_barostat_berendsen_particles(
         particles: &mut Vec<Particle>,

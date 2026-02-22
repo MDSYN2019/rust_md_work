@@ -5,25 +5,6 @@ The autocorrelation function is one of the most important statistical tools in m
 it tells you how many
 */
 
-use crate::lennard_jones_simulations::Particle;
-use crate::molecule;
-use crate::parameters;
-
-#[derive(Debug)]
-enum PropertyField {
-    Energy,
-}
-
-enum PropertyValue {
-    Number(f64),
-}
-
-fn get_property_value(field: Option<PropertyField>, particle: Particle) -> Option<f64> {
-    match field {
-        Some(PropertyField::Energy) => Some(particle.energy),
-        None => None,
-    }
-}
 
 pub fn compute_average_val(
     container_value: &mut Vec<f32>,
