@@ -24,14 +24,12 @@ pub fn hard_sphere_potential(r: f64, sigma: f64) -> f64 {
     /*
     Return the hard-sphere potential
      */
-    let mut u_ij = 0.0;
     if r < 1e-9 {
         return 0.0;
     } // Avoid singularity
     if r < sigma {
-        u_ij = 1000000000000000000000.0; // meant to simulate infinity..
+        1000000000000000000000.0 // meant to simulate infinity..
     } else {
-        u_ij = 0.0; // need to be a floating point number
+        0.0 // need to be a floating point number
     }
-    u_ij
 }

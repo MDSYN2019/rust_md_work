@@ -12,7 +12,6 @@ use crate::lennard_jones_simulations::LJParameters;
 use crate::lennard_jones_simulations::Particle;
 
 use nalgebra::Vector3;
-use std::collections::{HashMap, HashSet};
 
 #[derive(Copy, Clone)]
 pub struct SimpleBond {
@@ -84,14 +83,6 @@ pub struct System {
     pub bonds: Vec<Bond>,
 }
 
-fn safe_norm(v: &Vector3<f64>) -> f64 {
-    let r = v.norm();
-    if r < 1e-12 {
-        1e-12
-    } else {
-        r
-    }
-}
 
 // System is all the atoms (global), bonded terms in global indices, and exclusion sets
 
@@ -113,7 +104,7 @@ pub fn compute_bond_force(atoms: &mut Vec<Particle>, bond: &Bond, box_length: f6
     0.5 * bond.k * dr * dr // return the bond energy
 }
 
-pub fn compute_electostatic_bond_short_force(atoms: &mut Vec<Particle>, box_length: f64) -> f64 {
+pub fn compute_electostatic_bond_short_force(atoms: &mut Vec<Particle>, _box_length: f64) -> f64 {
     /*
     Compute the short range real space component of the electrostatic interaction
 
@@ -123,7 +114,6 @@ pub fn compute_electostatic_bond_short_force(atoms: &mut Vec<Particle>, box_leng
 
      */
     let mut total_short_range_potential = 0.0;
-    let k_2 = 1.0; // This will be changed to the permittivity of free space
     let e_0 = 1.0;
     for i in 0..atoms.len() {
         for j in (i + 1)..atoms.len() {
