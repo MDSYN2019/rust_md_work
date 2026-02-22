@@ -119,14 +119,8 @@ fn dedup_permutation(v: &mut Vec<Vec<i32>>) {
 pub mod cell_subdivision {
 
     use super::*; //
-    use error::compute_average_val;
-    use nalgebra::{zero, Vector3};
-    // importing bonds
-    use crate::lennard_jones_simulations::InitOutput;
+    use nalgebra::Vector3;
     use crate::lennard_jones_simulations::Particle;
-    use crate::molecule::molecule::apply_bonded_forces_and_energy;
-    use crate::molecule::molecule::make_h2_system;
-    use crate::molecule::molecule::Bond;
     use crate::molecule::molecule::System;
     /*
     Create the subcells required for efficiently computing the intermolecular interactions
@@ -294,7 +288,6 @@ pub mod lennard_jones_simulations {
     use error::compute_average_val;
 
     use nalgebra::{zero, Vector3};
-    use rand::prelude::*;
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
 
@@ -460,7 +453,7 @@ pub mod lennard_jones_simulations {
         temp: f64,
         mass: f64,
         v_max: f64,
-        box_dim_max: f64,
+        _box_dim_max: f64,
         use_atom: bool,
     ) -> Result<InitOutput, String> {
         /*
@@ -641,10 +634,7 @@ pub mod lennard_jones_simulations {
         }
         let mut cell_match_storage: Vec<Vec<i32>> = Vec::new();
 
-        let n = particles.len(); // number of particles in the system
-                                 // initalize zero forces for each particle
-
-        for (i, particle) in particles.iter_mut().enumerate() {}
+        // initalize zero forces for each particle
 
         // Instead of looping over each particle,
         // will probably need to loop over the
@@ -982,7 +972,7 @@ pub mod lennard_jones_simulations {
             // Propagates the half step
             run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
 
-            let mut simulation_box = cell_subdivision::SimulationBox {
+            let simulation_box = cell_subdivision::SimulationBox {
                 x_dimension: box_length,
                 y_dimension: box_length,
                 z_dimension: box_length,
@@ -1047,7 +1037,6 @@ pub mod lennard_jones_simulations {
         /*
         compute the total kinetic + potential energy of the system
          */
-        let mut bond_energy = 0.0;
         let mut kinetic_energy = 0.0;
         let mut potential_energy = 0.0;
 
@@ -1112,7 +1101,7 @@ pub mod lennard_jones_simulations {
             Forces should be recomputed BEFORE this half-kikc
              */
 
-            let mut simulation_box = cell_subdivision::SimulationBox {
+            let simulation_box = cell_subdivision::SimulationBox {
                 x_dimension: box_length,
                 y_dimension: box_length,
                 z_dimension: box_length,
@@ -1162,11 +1151,10 @@ pub mod lennard_jones_simulations {
         box_length: f64,
         thermostat: &str,
     ) {
-        let mut final_summary = SimulationSummary { energy: 0.0 };
         let mut values: Vec<f32> = Vec::new();
 
         // Create the subcells for the simulation box
-        let mut simulation_box = cell_subdivision::SimulationBox {
+        let simulation_box = cell_subdivision::SimulationBox {
             x_dimension: box_length,
             y_dimension: box_length,
             z_dimension: box_length,
@@ -1232,7 +1220,7 @@ pub mod lennard_jones_simulations {
 
             // 6) measure temperature
             let dof = 3 * particles.len();
-            let system_temperature = compute_temperature_particles(&particles, dof);
+            let _system_temperature = compute_temperature_particles(&particles, dof);
 
             //println!("T = {system_temperature:.4}");
 
@@ -1259,7 +1247,6 @@ pub mod lennard_jones_simulations {
             potential_energy = site_site_energy_calculation(particles, box_length);
             total_energy = kinetic_energy + potential_energy;
 
-            final_summary.energy = total_energy;
             values.push(total_energy as f32);
         }
         // Optional: your running-average helper
@@ -1279,14 +1266,13 @@ pub mod lennard_jones_simulations {
         box_length: f64,
         thermostat: &str,
     ) {
-        let mut final_summary = SimulationSummary { energy: 0.0 };
         let mut values: Vec<f32> = Vec::new();
         let mut total_energy = 0.0;
         let mut kinetic_energy = 0.0;
         let mut potential_energy = 0.0;
 
         // Create the subcells for the simulation box
-        let mut simulation_box = cell_subdivision::SimulationBox {
+        let simulation_box = cell_subdivision::SimulationBox {
             x_dimension: box_length,
             y_dimension: box_length,
             z_dimension: box_length,
@@ -1351,7 +1337,7 @@ pub mod lennard_jones_simulations {
 
                 // 5) thermostat per system (optional)
                 let dof = 3 * sys.atoms.len();
-                let system_temperature = compute_temperature_particles(&sys.atoms, dof);
+                let _system_temperature = compute_temperature_particles(&sys.atoms, dof);
                 // println!("T = {system_temperature:.4}");
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);

@@ -17,9 +17,6 @@ Such systems include electrons in atoms, molecules, and condensed matter. Proton
 and neutrons in nuclei, and nuclear matter.
 */
 
-#![allow(unused_variables)] // ensure that unused variables do not cause an error when compiling this program
-                            // relax compiler warnings while working through ideas
-
 use sang_md::lennard_jones_simulations; // this is in lib
 use sang_md::molecule::molecule; // this is not in lib - this is the molecule module
 
