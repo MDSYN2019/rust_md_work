@@ -83,7 +83,6 @@ pub struct System {
     pub bonds: Vec<Bond>,
 }
 
-
 // System is all the atoms (global), bonded terms in global indices, and exclusion sets
 
 pub fn compute_bond_force(atoms: &mut Vec<Particle>, bond: &Bond, box_length: f64) -> f64 {

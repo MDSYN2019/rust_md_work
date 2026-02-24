@@ -40,6 +40,6 @@ mod tests {
         let beta = 1.0; // Inverse temperature (1/kT)
         let delta_f = jarzynski.calculate_free_energy_difference(beta);
 
-        println!("Free energy difference: {}", delta_f);
+        log::info!("Free energy difference: {delta_f:.6}");
     }
 }

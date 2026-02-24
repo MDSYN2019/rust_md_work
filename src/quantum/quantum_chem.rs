@@ -398,9 +398,8 @@ pub mod self_consistent_field {
                     + (4. * f64::powi(self.I_1222 * c_1 * c_2, 3))
                     + f64::powi(self.I_2222 * c_2, 4);
 
-                println!(
-                    "The total energy is {} for iter {} and c_1 and c_2 values are {} {}",
-                    total_energy, entry, c_1, c_2
+                log::info!(
+                    "SCF iter {entry:>4} | E_total={total_energy:.8} c1={c_1:.6} c2={c_2:.6}"
                 );
 
                 // Computing the fock matrix 1,1 th element?

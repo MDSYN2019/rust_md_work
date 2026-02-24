@@ -118,9 +118,9 @@ fn dedup_permutation(v: &mut Vec<Vec<i32>>) {
 
 pub mod cell_subdivision {
 
-    use nalgebra::Vector3;
     use crate::lennard_jones_simulations::Particle;
     use crate::molecule::molecule::System;
+    use nalgebra::Vector3;
     /*
     Create the subcells required for efficiently computing the intermolecular interactions
     within a certain radius cutoff rather than working with all the atoms in the system
@@ -136,7 +136,6 @@ pub mod cell_subdivision {
     }
 
     //fn cell_id_to_3d
-
 
     fn position_to_cell_3d(
         pos: &Vector3<f64>,
@@ -281,6 +280,7 @@ pub mod lennard_jones_simulations {
 
     use error::compute_average_val;
 
+    use log::{debug, error, info};
     use nalgebra::{zero, Vector3};
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
@@ -349,7 +349,7 @@ pub mod lennard_jones_simulations {
             self.velocity[1] = normal.sample(&mut rng);
             self.velocity[2] = normal.sample(&mut rng);
 
-            println!("Assigned Maxwell-Boltzmann velocity: {:?}", self.velocity);
+            debug!("Assigned Maxwell-Boltzmann velocity: {:?}", self.velocity);
         }
 
         fn update_position_verlet(&mut self, dt: f64) -> () {
@@ -679,8 +679,8 @@ pub mod lennard_jones_simulations {
                     // action = -reaction
                     particles[*i_index].force -= f_vec;
                     particles[*j_index].force += f_vec;
-                    println!(
-                        "The forces are {:?} {:?}",
+                    debug!(
+                        "Pair force update: i={:?}, j={:?}",
                         particles[*i_index].force, particles[*j_index].force
                     );
                 }
@@ -874,8 +874,8 @@ pub mod lennard_jones_simulations {
                     p.velocity *= lambda;
                 }
 
-                println!(
-                    "Thermostat [Particles]: T = {:.2} -> {:.2}, λ = {:.4}",
+                info!(
+                    "Thermostat[particles] T: {:.2} -> {:.2} (scale λ={:.4})",
                     current_temperature, target_temperature, lambda
                 );
             }
@@ -904,8 +904,8 @@ pub mod lennard_jones_simulations {
                         a.velocity *= lambda;
                     }
 
-                    println!(
-                        "Thermostat [System #{si}]: T = {:.2} -> {:.2}, λ = {:.4}",
+                    info!(
+                        "Thermostat[system {si}] T: {:.2} -> {:.2} (scale λ={:.4})",
                         current_temperature, target_temperature, lambda
                     );
                 }
@@ -1054,8 +1054,8 @@ pub mod lennard_jones_simulations {
             }
         }
 
-        println!(
-            "The potential energy is {}",
+        debug!(
+            "Total instantaneous energy: {:.6}",
             kinetic_energy + potential_energy
         );
 
@@ -1168,9 +1168,9 @@ pub mod lennard_jones_simulations {
         let mut potential_energy = site_site_energy_calculation(particles, box_length);
         let mut total_energy = kinetic_energy + potential_energy;
 
-        println!(
-        "[init] E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
-    );
+        info!(
+            "Init particle energy | E_kin={kinetic_energy:.6} E_pot={potential_energy:.6} E_tot={total_energy:.6}"
+        );
 
         // only used if we are using nose_hoover
         let mut xi_nose_hoover = 0.0;
@@ -1277,9 +1277,9 @@ pub mod lennard_jones_simulations {
         simulation_box.store_atoms_in_cells_systems(systems, &mut subcells, 10);
         // --- initial forces and energy ---
 
-        println!(
-        "[init systems] particle  E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
-	);
+        info!(
+            "Init systems energy | E_kin={kinetic_energy:.6} E_pot={potential_energy:.6} E_tot={total_energy:.6}"
+        );
 
         for sys in systems.iter_mut() {
             for a in sys.atoms.iter_mut() {
@@ -1361,7 +1361,7 @@ pub mod lennard_jones_simulations {
 
             total_energy = kinetic_energy + potential_energy;
             values.push(total_energy as f32); // compute the total energy per timestep
-            println!("step {_step}: E_tot = {total_energy:.6}, E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}");
+            info!("Step {_step:>4} | E_tot={total_energy:.6} E_kin={kinetic_energy:.6} E_pot={potential_energy:.6}");
         }
 
         compute_average_val(&mut values, 2, number_of_steps as u64);
@@ -1432,7 +1432,7 @@ mod tests {
                 // How to handle errors - we are returning a result or a string
                 Ok(atoms) => atoms,
                 Err(e) => {
-                    eprintln!("Failed to create atoms: {}", e); //Log the error
+                    error!("Failed to create atoms: {e}");
                     return; // Exit early or handle the error as needed
                 }
             };
@@ -1447,7 +1447,7 @@ mod tests {
         //let dof = 3 * new_simulation_md.len();
         // compute the final temperature of the system
         let t = lennard_jones_simulations::compute_temperature(&mut new_simulation_md, dof);
-        println!("Temperature is {}, and target is {}", t, t0);
+        info!("Final temperature={t:.3}, target={t0:.3}");
         assert!((t - t0).abs() < 5.0, "Temperature should approach target");
     }
 }

@@ -17,10 +17,13 @@ Such systems include electrons in atoms, molecules, and condensed matter. Proton
 and neutrons in nuclei, and nuclear matter.
 */
 
+use log::error;
 use sang_md::lennard_jones_simulations; // this is in lib
 use sang_md::molecule::molecule; // this is not in lib - this is the molecule module
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     // main code for running molecular dynamics simulations - version 2
     // create a new system
     let mut new_simulation_md =
@@ -30,7 +33,7 @@ fn main() {
             // How to handle errors - we are returning a result or a string
             Ok(atoms) => atoms,
             Err(e) => {
-                eprintln!("Failed to create atoms: {}", e); // Log the error
+                error!("Failed to create atoms: {e}");
                 return; // Exit early or handle the error as needed
             }
         };
