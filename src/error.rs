@@ -5,7 +5,6 @@ The autocorrelation function is one of the most important statistical tools in m
 it tells you how many
 */
 
-
 pub fn compute_average_val(
     container_value: &mut Vec<f32>,
     block_steps: u64,
@@ -18,18 +17,16 @@ pub fn compute_average_val(
  */
 {
     if number_of_steps % block_steps != 0 {
-        eprintln!("We dont have the right number of blocks steps defined for the total number of steps {}", number_of_steps);
+        log::warn!("Invalid block configuration: number_of_steps={number_of_steps}, block_steps={block_steps}");
     }
     // ensure that the property we want to compute the block average for
     // actually exists within the simulation code
 
     for (i, chunk) in container_value.chunks(block_steps as usize).enumerate() {
         let summed_values: f32 = chunk.iter().sum();
-        println!(
-            "chunk {:?}: {:?} with block sizes as {:?}",
-            i,
-            summed_values / block_steps as f32,
-            block_steps
+        log::info!(
+            "Block {i:>4} | avg={:.6} (block size={block_steps})",
+            summed_values / block_steps as f32
         );
     }
 }

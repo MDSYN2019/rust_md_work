@@ -1,7 +1,6 @@
 pub mod nose_hoover {
     use crate::lennard_jones_simulations::{
-        compute_pressure_particles, compute_temperature_particles,
-        Particle,
+        compute_pressure_particles, compute_temperature_particles, Particle,
     };
 
     pub fn apply_thermostat_nose_hoover_particles(

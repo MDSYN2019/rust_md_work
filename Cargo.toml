@@ -11,6 +11,7 @@ rand_distr = "0.5"
 nalgebra = "0.33"         # OR ndarray = "0.16" (pick one)
 itertools = "0.14"        # optional
 log = "0.4"               # optional
+env_logger = "0.11"
 assert-type-eq = "0.1.0"
 parameterized = "2.1.0"
 xdrfile = "0.3.0"
