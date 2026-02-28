@@ -75,6 +75,7 @@ extern crate assert_type_eq;
 pub mod error;
 pub mod molecule;
 pub mod parameters;
+pub mod stat_mech;
 pub mod thermostat_barostat;
 
 use std::collections::HashSet;
