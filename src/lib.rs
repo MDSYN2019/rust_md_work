@@ -280,7 +280,7 @@ pub mod lennard_jones_simulations {
 
     use error::compute_average_val;
 
-    use log::{debug, error, info};
+    use log::{debug, info};
     use nalgebra::{zero, Vector3};
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
@@ -717,6 +717,74 @@ pub mod lennard_jones_simulations {
             e += 0.5 * b.k * dr * dr;
         }
         e
+    }
+
+    pub fn compute_intermolecular_forces_systems(systems: &mut [System], box_length: f64) -> f64 {
+        /*
+        Compute Lennard-Jones interactions between atoms belonging to different systems.
+        Intra-molecular interactions are omitted here and handled by bonded terms.
+         */
+        let mut total_energy = 0.0;
+
+        for i in 0..systems.len() {
+            for j in (i + 1)..systems.len() {
+                let (left, right) = systems.split_at_mut(j);
+                let sys_i = &mut left[i];
+                let sys_j = &mut right[0];
+
+                for atom_i in sys_i.atoms.iter_mut() {
+                    for atom_j in sys_j.atoms.iter_mut() {
+                        let r_vec = atom_j.position - atom_i.position;
+                        let r_mic = minimum_image_convention(r_vec, box_length);
+                        let r = safe_norm(r_mic.norm());
+
+                        let sigma = 0.5 * (atom_i.lj_parameters.sigma + atom_j.lj_parameters.sigma);
+                        let epsilon =
+                            (atom_i.lj_parameters.epsilon * atom_j.lj_parameters.epsilon).sqrt();
+
+                        let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+                        let f_vec = (r_mic / r) * f_mag;
+
+                        atom_i.force -= f_vec;
+                        atom_j.force += f_vec;
+
+                        total_energy += lennard_jones_potential(r, sigma, epsilon);
+                    }
+                }
+            }
+        }
+
+        total_energy
+    }
+
+    pub fn intermolecular_site_site_energy_systems(systems: &[System], box_length: f64) -> f64 {
+        /*
+        Compute Lennard-Jones potential energy between atoms in different systems.
+         */
+        let mut total_energy = 0.0;
+
+        for i in 0..systems.len() {
+            for j in (i + 1)..systems.len() {
+                let sys_i = &systems[i];
+                let sys_j = &systems[j];
+
+                for atom_i in sys_i.atoms.iter() {
+                    for atom_j in sys_j.atoms.iter() {
+                        let r_vec = atom_j.position - atom_i.position;
+                        let r_mic = minimum_image_convention(r_vec, box_length);
+                        let r = safe_norm(r_mic.norm());
+
+                        let sigma = 0.5 * (atom_i.lj_parameters.sigma + atom_j.lj_parameters.sigma);
+                        let epsilon =
+                            (atom_i.lj_parameters.epsilon * atom_j.lj_parameters.epsilon).sqrt();
+
+                        total_energy += lennard_jones_potential(r, sigma, epsilon);
+                    }
+                }
+            }
+        }
+
+        total_energy
     }
 
     pub fn compute_bonded_forces_system(
@@ -1287,15 +1355,14 @@ pub mod lennard_jones_simulations {
             }
             compute_bonded_forces(&mut sys.atoms, &sys.bonds, box_length);
         }
+        compute_intermolecular_forces_systems(systems, box_length);
 
         // this is only used if we apply nose hoover
         let mut xi_nose_hoover = vec![0.0; systems.len()];
 
         // --- time integration loop ---
         for _step in 0..number_of_steps {
-            // For each system independently
-            for (s, sys) in systems.iter_mut().enumerate() {
-                // Create place to store the old accelerations
+            for sys in systems.iter_mut() {
                 let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(sys.atoms.len());
 
                 for a in sys.atoms.iter() {
@@ -1306,33 +1373,28 @@ pub mod lennard_jones_simulations {
                     atom.velocity += 0.5 * a_o * dt;
                 }
 
-                // 2) drift positions
                 for atom in sys.atoms.iter_mut() {
                     atom.update_position_verlet(dt);
                 }
 
-                // 3) PBC
                 pbc_update(&mut sys.atoms, box_length);
-
-                // recompute forces (bonded; you can add LJ here too if you want) - at the moment, only
-                // accounting for the intramolecular forces, not between the molecules
 
                 for a in sys.atoms.iter_mut() {
                     a.force = Vector3::zeros();
                 }
-
                 compute_bonded_forces(&mut sys.atoms, &sys.bonds, box_length);
+            }
 
-                // 5) velocity update (Verlet - second half step)
+            compute_intermolecular_forces_systems(systems, box_length);
+
+            for (s, sys) in systems.iter_mut().enumerate() {
                 for a in sys.atoms.iter_mut() {
                     let a_new = a.force / a.mass;
                     a.update_velocity_verlet(a_new, dt);
                 }
 
-                // 5) thermostat per system (optional)
                 let dof = 3 * sys.atoms.len();
                 let _system_temperature = compute_temperature_particles(&sys.atoms, dof);
-                // println!("T = {system_temperature:.4}");
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
                 } else if thermostat == "nose_hoover" {
@@ -1346,21 +1408,18 @@ pub mod lennard_jones_simulations {
                 }
             }
 
-            // recompute global energy after this step
             kinetic_energy = 0.0;
             potential_energy = 0.0;
-            // bonded forces
             for sys in systems.iter_mut() {
                 for a in sys.atoms.iter() {
                     kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
                 }
                 potential_energy += compute_bonded_energy(&sys.atoms, &sys.bonds, box_length);
-                // bonded forces
-                //potential_energy += site_site_energy_calculation(&mut sys.atoms, box_length);
             }
+            potential_energy += intermolecular_site_site_energy_systems(systems, box_length);
 
             total_energy = kinetic_energy + potential_energy;
-            values.push(total_energy as f32); // compute the total energy per timestep
+            values.push(total_energy as f32);
             info!("Step {_step:>4} | E_tot={total_energy:.6} E_kin={kinetic_energy:.6} E_pot={potential_energy:.6}");
         }
 
@@ -1388,6 +1447,7 @@ pub mod lennard_jones_simulations {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use log::{error, info};
 
     // lennard-jones double loop test
     #[test]
