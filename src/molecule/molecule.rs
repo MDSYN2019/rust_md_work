@@ -42,11 +42,34 @@ pub struct Bond {
     pub r0: f64,
 }
 
+#[derive(Clone, Debug)]
 pub struct Angle {
     pub atom1: usize,
     pub atom2: usize,
     pub atom3: usize,
     pub k: f64,
+    pub theta0: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Dihedral {
+    pub atom1: usize,
+    pub atom2: usize,
+    pub atom3: usize,
+    pub atom4: usize,
+    pub k: f64,
+    pub multiplicity: usize,
+    pub phase: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Improper {
+    pub atom1: usize,
+    pub atom2: usize,
+    pub atom3: usize,
+    pub atom4: usize,
+    pub k: f64,
+    pub psi0: f64,
 }
 
 #[derive(Copy, Clone)]
@@ -81,6 +104,9 @@ pub struct MoleculeTemplate {
 pub struct System {
     pub atoms: Vec<Particle>,
     pub bonds: Vec<Bond>,
+    pub angles: Vec<Angle>,
+    pub dihedrals: Vec<Dihedral>,
+    pub impropers: Vec<Improper>,
 }
 
 // System is all the atoms (global), bonded terms in global indices, and exclusion sets
@@ -125,20 +151,192 @@ pub fn compute_electostatic_bond_short_force(atoms: &mut Vec<Particle>, _box_len
     total_short_range_potential
 }
 
+fn angle_value(atoms: &[Particle], angle: &Angle, box_length: f64) -> f64 {
+    let r21 = minimum_image_convention(
+        atoms[angle.atom1].position - atoms[angle.atom2].position,
+        box_length,
+    );
+    let r23 = minimum_image_convention(
+        atoms[angle.atom3].position - atoms[angle.atom2].position,
+        box_length,
+    );
+
+    let n1 = r21.norm();
+    let n2 = r23.norm();
+    if n1 <= 1e-12 || n2 <= 1e-12 {
+        return angle.theta0;
+    }
+
+    let cos_theta = (r21.dot(&r23) / (n1 * n2)).clamp(-1.0, 1.0);
+    cos_theta.acos()
+}
+
+fn dihedral_value(atoms: &[Particle], dihedral: &Dihedral, box_length: f64) -> f64 {
+    let b1 = minimum_image_convention(
+        atoms[dihedral.atom2].position - atoms[dihedral.atom1].position,
+        box_length,
+    );
+    let b2 = minimum_image_convention(
+        atoms[dihedral.atom3].position - atoms[dihedral.atom2].position,
+        box_length,
+    );
+    let b3 = minimum_image_convention(
+        atoms[dihedral.atom4].position - atoms[dihedral.atom3].position,
+        box_length,
+    );
+
+    let n1 = b1.cross(&b2);
+    let n2 = b2.cross(&b3);
+    let b2_norm = b2.norm();
+    if n1.norm() <= 1e-12 || n2.norm() <= 1e-12 || b2_norm <= 1e-12 {
+        return 0.0;
+    }
+
+    let b2_hat = b2 / b2_norm;
+    let m1 = n1.cross(&b2_hat);
+
+    let x = n1.dot(&n2);
+    let y = m1.dot(&n2);
+    y.atan2(x)
+}
+
+fn improper_value(atoms: &[Particle], improper: &Improper, box_length: f64) -> f64 {
+    let as_dihedral = Dihedral {
+        atom1: improper.atom1,
+        atom2: improper.atom2,
+        atom3: improper.atom3,
+        atom4: improper.atom4,
+        k: improper.k,
+        multiplicity: 1,
+        phase: 0.0,
+    };
+    dihedral_value(atoms, &as_dihedral, box_length)
+}
+
+pub fn compute_angle_force(atoms: &mut [Particle], angle: &Angle, box_length: f64) -> f64 {
+    let theta = angle_value(atoms, angle, box_length);
+    let dtheta = theta - angle.theta0;
+    let energy = 0.5 * angle.k * dtheta * dtheta;
+
+    let atom_indices = [angle.atom1, angle.atom2, angle.atom3];
+    let h = 1e-6;
+
+    for &idx in &atom_indices {
+        for dim in 0..3 {
+            atoms[idx].position[dim] += h;
+            let e_plus =
+                0.5 * angle.k * (angle_value(atoms, angle, box_length) - angle.theta0).powi(2);
+            atoms[idx].position[dim] -= 2.0 * h;
+            let e_minus =
+                0.5 * angle.k * (angle_value(atoms, angle, box_length) - angle.theta0).powi(2);
+            atoms[idx].position[dim] += h;
+
+            let d_e = (e_plus - e_minus) / (2.0 * h);
+            atoms[idx].force[dim] += -d_e;
+        }
+    }
+
+    energy
+}
+
+pub fn compute_dihedral_force(atoms: &mut [Particle], dihedral: &Dihedral, box_length: f64) -> f64 {
+    let phi = dihedral_value(atoms, dihedral, box_length);
+    let n = dihedral.multiplicity as f64;
+    let energy = dihedral.k * (1.0 + (n * phi - dihedral.phase).cos());
+
+    let atom_indices = [
+        dihedral.atom1,
+        dihedral.atom2,
+        dihedral.atom3,
+        dihedral.atom4,
+    ];
+    let h = 1e-6;
+
+    for &idx in &atom_indices {
+        for dim in 0..3 {
+            atoms[idx].position[dim] += h;
+            let e_plus = dihedral.k
+                * (1.0
+                    + ((n * dihedral_value(atoms, dihedral, box_length)) - dihedral.phase).cos());
+            atoms[idx].position[dim] -= 2.0 * h;
+            let e_minus = dihedral.k
+                * (1.0
+                    + ((n * dihedral_value(atoms, dihedral, box_length)) - dihedral.phase).cos());
+            atoms[idx].position[dim] += h;
+
+            let d_e = (e_plus - e_minus) / (2.0 * h);
+            atoms[idx].force[dim] += -d_e;
+        }
+    }
+
+    energy
+}
+
+pub fn compute_improper_force(atoms: &mut [Particle], improper: &Improper, box_length: f64) -> f64 {
+    let psi = improper_value(atoms, improper, box_length);
+    let dpsi = psi - improper.psi0;
+    let energy = 0.5 * improper.k * dpsi * dpsi;
+
+    let atom_indices = [
+        improper.atom1,
+        improper.atom2,
+        improper.atom3,
+        improper.atom4,
+    ];
+    let h = 1e-6;
+
+    for &idx in &atom_indices {
+        for dim in 0..3 {
+            atoms[idx].position[dim] += h;
+            let e_plus = 0.5
+                * improper.k
+                * (improper_value(atoms, improper, box_length) - improper.psi0).powi(2);
+            atoms[idx].position[dim] -= 2.0 * h;
+            let e_minus = 0.5
+                * improper.k
+                * (improper_value(atoms, improper, box_length) - improper.psi0).powi(2);
+            atoms[idx].position[dim] += h;
+
+            let d_e = (e_plus - e_minus) / (2.0 * h);
+            atoms[idx].force[dim] += -d_e;
+        }
+    }
+
+    energy
+}
+
+pub fn apply_all_bonded_forces_and_energy(
+    atoms: &mut Vec<Particle>,
+    bonds: &[Bond],
+    angles: &[Angle],
+    dihedrals: &[Dihedral],
+    impropers: &[Improper],
+    box_length: f64,
+) -> f64 {
+    let mut energy = 0.0;
+
+    for b in bonds {
+        energy += compute_bond_force(atoms, b, box_length);
+    }
+    for angle in angles {
+        energy += compute_angle_force(atoms, angle, box_length);
+    }
+    for dihedral in dihedrals {
+        energy += compute_dihedral_force(atoms, dihedral, box_length);
+    }
+    for improper in impropers {
+        energy += compute_improper_force(atoms, improper, box_length);
+    }
+
+    energy
+}
+
 pub fn apply_bonded_forces_and_energy(
     atoms: &mut Vec<Particle>,
     bonds: &[Bond],
     box_length: f64,
 ) -> f64 {
-    /*
-    For all the bonds, return the bond energy
-     */
-    let mut e_bond = 0.0;
-
-    for b in bonds {
-        e_bond += compute_bond_force(atoms, b, box_length);
-    }
-    e_bond
+    apply_all_bonded_forces_and_energy(atoms, bonds, &[], &[], &[], box_length)
 }
 
 pub fn make_h2_system() -> System {
@@ -199,7 +397,13 @@ pub fn make_h2_system() -> System {
         r0,
     }];
 
-    System { atoms, bonds }
+    System {
+        atoms,
+        bonds,
+        angles: vec![],
+        dihedrals: vec![],
+        impropers: vec![],
+    }
 }
 
 pub fn create_systems(system: &System, number_of_molecules: i32) -> InitOutput {
@@ -255,5 +459,146 @@ mod tests {
 
         let dist = bond_distance(&atom1, &atom2);
         assert!((dist - 3.0).abs() < 1e-6) // happy path
+    }
+    #[test]
+    fn test_angle_force_energy_zero_at_equilibrium() {
+        let mut atoms = vec![
+            Particle {
+                id: 0,
+                position: Vector3::new(1.0, 0.0, 0.0),
+                velocity: Vector3::zeros(),
+                force: Vector3::zeros(),
+                atom_type: 0.0,
+                mass: 1.0,
+                charge: 0.0,
+                energy: 0.0,
+                lj_parameters: LJParameters {
+                    epsilon: 1.0,
+                    sigma: 1.0,
+                    number_of_atoms: 1,
+                },
+            },
+            Particle {
+                id: 1,
+                position: Vector3::new(0.0, 0.0, 0.0),
+                velocity: Vector3::zeros(),
+                force: Vector3::zeros(),
+                atom_type: 0.0,
+                mass: 1.0,
+                charge: 0.0,
+                energy: 0.0,
+                lj_parameters: LJParameters {
+                    epsilon: 1.0,
+                    sigma: 1.0,
+                    number_of_atoms: 1,
+                },
+            },
+            Particle {
+                id: 2,
+                position: Vector3::new(0.0, 1.0, 0.0),
+                velocity: Vector3::zeros(),
+                force: Vector3::zeros(),
+                atom_type: 0.0,
+                mass: 1.0,
+                charge: 0.0,
+                energy: 0.0,
+                lj_parameters: LJParameters {
+                    epsilon: 1.0,
+                    sigma: 1.0,
+                    number_of_atoms: 1,
+                },
+            },
+        ];
+
+        let angle = Angle {
+            atom1: 0,
+            atom2: 1,
+            atom3: 2,
+            k: 10.0,
+            theta0: std::f64::consts::FRAC_PI_2,
+        };
+
+        let e = compute_angle_force(&mut atoms, &angle, 10.0);
+        assert!(e.abs() < 1e-8);
+    }
+
+    #[test]
+    fn test_dihedral_energy_phase_shift() {
+        let atoms = vec![
+            Particle {
+                id: 0,
+                position: Vector3::new(0.0, 0.0, 0.0),
+                velocity: Vector3::zeros(),
+                force: Vector3::zeros(),
+                atom_type: 0.0,
+                mass: 1.0,
+                charge: 0.0,
+                energy: 0.0,
+                lj_parameters: LJParameters {
+                    epsilon: 1.0,
+                    sigma: 1.0,
+                    number_of_atoms: 1,
+                },
+            },
+            Particle {
+                id: 1,
+                position: Vector3::new(1.0, 0.0, 0.0),
+                velocity: Vector3::zeros(),
+                force: Vector3::zeros(),
+                atom_type: 0.0,
+                mass: 1.0,
+                charge: 0.0,
+                energy: 0.0,
+                lj_parameters: LJParameters {
+                    epsilon: 1.0,
+                    sigma: 1.0,
+                    number_of_atoms: 1,
+                },
+            },
+            Particle {
+                id: 2,
+                position: Vector3::new(1.0, 1.0, 0.0),
+                velocity: Vector3::zeros(),
+                force: Vector3::zeros(),
+                atom_type: 0.0,
+                mass: 1.0,
+                charge: 0.0,
+                energy: 0.0,
+                lj_parameters: LJParameters {
+                    epsilon: 1.0,
+                    sigma: 1.0,
+                    number_of_atoms: 1,
+                },
+            },
+            Particle {
+                id: 3,
+                position: Vector3::new(1.0, 1.0, 1.0),
+                velocity: Vector3::zeros(),
+                force: Vector3::zeros(),
+                atom_type: 0.0,
+                mass: 1.0,
+                charge: 0.0,
+                energy: 0.0,
+                lj_parameters: LJParameters {
+                    epsilon: 1.0,
+                    sigma: 1.0,
+                    number_of_atoms: 1,
+                },
+            },
+        ];
+
+        let dih = Dihedral {
+            atom1: 0,
+            atom2: 1,
+            atom3: 2,
+            atom4: 3,
+            k: 2.0,
+            multiplicity: 1,
+            phase: 0.0,
+        };
+
+        let phi = dihedral_value(&atoms, &dih, 10.0);
+        let e = dih.k * (1.0 + (phi - dih.phase).cos());
+        assert!(e.is_finite());
     }
 }
