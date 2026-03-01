@@ -13,6 +13,25 @@ use crate::lennard_jones_simulations::Particle;
 
 use nalgebra::Vector3;
 
+#[derive(Clone, Debug)]
+pub struct PMEConfig {
+    pub alpha: f64,
+    pub real_space_cutoff: f64,
+    pub grid_dim: usize,
+    pub vacuum_permittivity: f64,
+}
+
+impl Default for PMEConfig {
+    fn default() -> Self {
+        Self {
+            alpha: 0.35,
+            real_space_cutoff: 8.0,
+            grid_dim: 16,
+            vacuum_permittivity: 1.0,
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct SimpleBond {
     pub i: usize,
@@ -142,13 +161,273 @@ pub fn compute_electostatic_bond_short_force(atoms: &mut Vec<Particle>, _box_len
     let e_0 = 1.0;
     for i in 0..atoms.len() {
         for j in (i + 1)..atoms.len() {
-            // This needs to be properly represent the coloumbing potential - this is a crappy dummy at the moment
-            total_short_range_potential += ((atoms[i].charge * atoms[j].charge)
-                / (4.0 * 3.14 * e_0))
-                / (atoms[0].position - atoms[1].position).norm()
+            let r = (atoms[i].position - atoms[j].position).norm().max(1e-12);
+            total_short_range_potential +=
+                ((atoms[i].charge * atoms[j].charge) / (4.0 * 3.14 * e_0)) / r
         }
     }
     total_short_range_potential
+}
+
+fn pme_flat_index(ix: usize, iy: usize, iz: usize, n: usize) -> usize {
+    (ix * n + iy) * n + iz
+}
+
+fn erfc_approx(x: f64) -> f64 {
+    // Abramowitz and Stegun 7.1.26
+    let z = x.abs();
+    let t = 1.0 / (1.0 + 0.3275911 * z);
+    let y = 1.0
+        - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t
+            + 0.254829592)
+            * t
+            * (-(z * z)).exp();
+    if x >= 0.0 {
+        1.0 - y
+    } else {
+        1.0 + y
+    }
+}
+
+fn assign_charge_to_mesh_cic(
+    atoms: &[Particle],
+    box_length: f64,
+    n: usize,
+) -> (Vec<f64>, Vec<[usize; 8]>, Vec<[f64; 8]>) {
+    let mut rho = vec![0.0; n * n * n];
+    let mut particle_nodes = Vec::with_capacity(atoms.len());
+    let mut particle_weights = Vec::with_capacity(atoms.len());
+
+    for atom in atoms {
+        let fx = atom.position.x.rem_euclid(box_length) / box_length * n as f64;
+        let fy = atom.position.y.rem_euclid(box_length) / box_length * n as f64;
+        let fz = atom.position.z.rem_euclid(box_length) / box_length * n as f64;
+
+        let ix0 = fx.floor() as usize % n;
+        let iy0 = fy.floor() as usize % n;
+        let iz0 = fz.floor() as usize % n;
+        let ix1 = (ix0 + 1) % n;
+        let iy1 = (iy0 + 1) % n;
+        let iz1 = (iz0 + 1) % n;
+
+        let tx = fx - ix0 as f64;
+        let ty = fy - iy0 as f64;
+        let tz = fz - iz0 as f64;
+
+        let nodes = [
+            pme_flat_index(ix0, iy0, iz0, n),
+            pme_flat_index(ix1, iy0, iz0, n),
+            pme_flat_index(ix0, iy1, iz0, n),
+            pme_flat_index(ix1, iy1, iz0, n),
+            pme_flat_index(ix0, iy0, iz1, n),
+            pme_flat_index(ix1, iy0, iz1, n),
+            pme_flat_index(ix0, iy1, iz1, n),
+            pme_flat_index(ix1, iy1, iz1, n),
+        ];
+
+        let weights = [
+            (1.0 - tx) * (1.0 - ty) * (1.0 - tz),
+            tx * (1.0 - ty) * (1.0 - tz),
+            (1.0 - tx) * ty * (1.0 - tz),
+            tx * ty * (1.0 - tz),
+            (1.0 - tx) * (1.0 - ty) * tz,
+            tx * (1.0 - ty) * tz,
+            (1.0 - tx) * ty * tz,
+            tx * ty * tz,
+        ];
+
+        for (node, w) in nodes.iter().zip(weights.iter()) {
+            rho[*node] += atom.charge * *w;
+        }
+
+        particle_nodes.push(nodes);
+        particle_weights.push(weights);
+    }
+
+    (rho, particle_nodes, particle_weights)
+}
+
+pub fn compute_particle_mesh_ewald(
+    atoms: &mut [Particle],
+    box_length: f64,
+    config: &PMEConfig,
+) -> f64 {
+    let n = config.grid_dim.max(4);
+    let volume = box_length.powi(3);
+    let alpha = config.alpha.max(1e-8);
+    let k_coulomb = 1.0 / (4.0 * std::f64::consts::PI * config.vacuum_permittivity.max(1e-12));
+
+    let mut total_energy = 0.0;
+    let real_cutoff = config.real_space_cutoff.min(0.5 * box_length);
+
+    for i in 0..atoms.len() {
+        for j in (i + 1)..atoms.len() {
+            let rij = minimum_image_convention(atoms[j].position - atoms[i].position, box_length);
+            let r = rij.norm();
+            if r <= 1e-12 || r > real_cutoff {
+                continue;
+            }
+
+            let qij = atoms[i].charge * atoms[j].charge;
+            let erfc_term = erfc_approx(alpha * r);
+            let prefactor = k_coulomb * qij;
+            total_energy += prefactor * erfc_term / r;
+
+            let force_scalar = prefactor
+                * (erfc_term / (r * r)
+                    + (2.0 * alpha / std::f64::consts::PI.sqrt())
+                        * (-(alpha * alpha) * r * r).exp()
+                        / r);
+            let fij = rij * (force_scalar / r);
+            atoms[i].force += fij;
+            atoms[j].force -= fij;
+        }
+    }
+
+    let (rho, particle_nodes, particle_weights) = assign_charge_to_mesh_cic(atoms, box_length, n);
+
+    let mut rho_k_re = vec![0.0; n * n * n];
+    let mut rho_k_im = vec![0.0; n * n * n];
+    let two_pi = 2.0 * std::f64::consts::PI;
+
+    for kx in 0..n {
+        for ky in 0..n {
+            for kz in 0..n {
+                let mut re = 0.0;
+                let mut im = 0.0;
+                for ix in 0..n {
+                    for iy in 0..n {
+                        for iz in 0..n {
+                            let idx = pme_flat_index(ix, iy, iz, n);
+                            let phase = two_pi * ((kx * ix + ky * iy + kz * iz) as f64 / n as f64);
+                            re += rho[idx] * phase.cos();
+                            im -= rho[idx] * phase.sin();
+                        }
+                    }
+                }
+                let k_idx = pme_flat_index(kx, ky, kz, n);
+                rho_k_re[k_idx] = re;
+                rho_k_im[k_idx] = im;
+            }
+        }
+    }
+
+    let mut phi_k_re = vec![0.0; n * n * n];
+    let mut phi_k_im = vec![0.0; n * n * n];
+
+    for kx in 0..n {
+        let kx_i = if kx <= n / 2 {
+            kx as i32
+        } else {
+            kx as i32 - n as i32
+        };
+        for ky in 0..n {
+            let ky_i = if ky <= n / 2 {
+                ky as i32
+            } else {
+                ky as i32 - n as i32
+            };
+            for kz in 0..n {
+                let kz_i = if kz <= n / 2 {
+                    kz as i32
+                } else {
+                    kz as i32 - n as i32
+                };
+                let k_vec =
+                    Vector3::new(kx_i as f64, ky_i as f64, kz_i as f64) * (two_pi / box_length);
+                let k_sq = k_vec.norm_squared();
+                let idx = pme_flat_index(kx, ky, kz, n);
+                if k_sq <= 1e-12 {
+                    continue;
+                }
+
+                let green = 4.0 * std::f64::consts::PI * (-(k_sq) / (4.0 * alpha * alpha)).exp()
+                    / (k_sq * volume);
+                phi_k_re[idx] = green * rho_k_re[idx];
+                phi_k_im[idx] = green * rho_k_im[idx];
+
+                total_energy += 0.5
+                    * k_coulomb
+                    * green
+                    * (rho_k_re[idx] * rho_k_re[idx] + rho_k_im[idx] * rho_k_im[idx]);
+            }
+        }
+    }
+
+    let mut phi_grid = vec![0.0; n * n * n];
+    let norm = 1.0 / (n * n * n) as f64;
+    for ix in 0..n {
+        for iy in 0..n {
+            for iz in 0..n {
+                let mut phi = 0.0;
+                for kx in 0..n {
+                    for ky in 0..n {
+                        for kz in 0..n {
+                            let idx = pme_flat_index(kx, ky, kz, n);
+                            let phase = two_pi * ((kx * ix + ky * iy + kz * iz) as f64 / n as f64);
+                            phi += phi_k_re[idx] * phase.cos() - phi_k_im[idx] * phase.sin();
+                        }
+                    }
+                }
+                phi_grid[pme_flat_index(ix, iy, iz, n)] = k_coulomb * norm * phi;
+            }
+        }
+    }
+
+    let h = box_length / n as f64;
+    let mut ex_grid = vec![0.0; n * n * n];
+    let mut ey_grid = vec![0.0; n * n * n];
+    let mut ez_grid = vec![0.0; n * n * n];
+
+    for ix in 0..n {
+        let ixp = (ix + 1) % n;
+        let ixm = (ix + n - 1) % n;
+        for iy in 0..n {
+            let iyp = (iy + 1) % n;
+            let iym = (iy + n - 1) % n;
+            for iz in 0..n {
+                let izp = (iz + 1) % n;
+                let izm = (iz + n - 1) % n;
+
+                let idx = pme_flat_index(ix, iy, iz, n);
+                let dphidx = (phi_grid[pme_flat_index(ixp, iy, iz, n)]
+                    - phi_grid[pme_flat_index(ixm, iy, iz, n)])
+                    / (2.0 * h);
+                let dphidy = (phi_grid[pme_flat_index(ix, iyp, iz, n)]
+                    - phi_grid[pme_flat_index(ix, iym, iz, n)])
+                    / (2.0 * h);
+                let dphidz = (phi_grid[pme_flat_index(ix, iy, izp, n)]
+                    - phi_grid[pme_flat_index(ix, iy, izm, n)])
+                    / (2.0 * h);
+
+                ex_grid[idx] = -dphidx;
+                ey_grid[idx] = -dphidy;
+                ez_grid[idx] = -dphidz;
+            }
+        }
+    }
+
+    for (atom_idx, atom) in atoms.iter_mut().enumerate() {
+        let mut phi_interp = 0.0;
+        let mut e_interp = Vector3::zeros();
+
+        for i in 0..8 {
+            let node = particle_nodes[atom_idx][i];
+            let w = particle_weights[atom_idx][i];
+            phi_interp += w * phi_grid[node];
+            e_interp.x += w * ex_grid[node];
+            e_interp.y += w * ey_grid[node];
+            e_interp.z += w * ez_grid[node];
+        }
+
+        atom.force += atom.charge * e_interp;
+        total_energy += 0.5 * atom.charge * phi_interp;
+    }
+
+    let self_energy = atoms.iter().map(|a| a.charge * a.charge).sum::<f64>() * k_coulomb * alpha
+        / std::f64::consts::PI.sqrt();
+
+    total_energy - self_energy
 }
 
 fn angle_value(atoms: &[Particle], angle: &Angle, box_length: f64) -> f64 {
@@ -522,6 +801,53 @@ mod tests {
         assert!(e.abs() < 1e-8);
     }
 
+    #[test]
+    fn test_particle_mesh_ewald_two_body_is_finite() {
+        let mut atoms = vec![
+            Particle {
+                id: 0,
+                position: Vector3::new(1.0, 1.0, 1.0),
+                velocity: Vector3::zeros(),
+                force: Vector3::zeros(),
+                atom_type: 0.0,
+                mass: 1.0,
+                charge: 1.0,
+                energy: 0.0,
+                lj_parameters: LJParameters {
+                    epsilon: 1.0,
+                    sigma: 1.0,
+                    number_of_atoms: 1,
+                },
+            },
+            Particle {
+                id: 1,
+                position: Vector3::new(2.0, 1.0, 1.0),
+                velocity: Vector3::zeros(),
+                force: Vector3::zeros(),
+                atom_type: 0.0,
+                mass: 1.0,
+                charge: -1.0,
+                energy: 0.0,
+                lj_parameters: LJParameters {
+                    epsilon: 1.0,
+                    sigma: 1.0,
+                    number_of_atoms: 1,
+                },
+            },
+        ];
+
+        let config = PMEConfig {
+            alpha: 0.4,
+            real_space_cutoff: 3.0,
+            grid_dim: 4,
+            vacuum_permittivity: 1.0,
+        };
+
+        let energy = compute_particle_mesh_ewald(&mut atoms, 8.0, &config);
+        assert!(energy.is_finite());
+        assert!(atoms[0].force.norm().is_finite());
+        assert!(atoms[1].force.norm().is_finite());
+    }
     #[test]
     fn test_dihedral_energy_phase_shift() {
         let atoms = vec![
