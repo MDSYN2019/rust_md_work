@@ -286,10 +286,13 @@ pub mod lennard_jones_simulations {
     use rand_distr::{Distribution, Normal};
 
     // importing bonds
-    use crate::molecule::molecule::apply_bonded_forces_and_energy;
     use crate::molecule::molecule::make_h2_system;
     use crate::molecule::molecule::Bond;
     use crate::molecule::molecule::System;
+    use crate::molecule::molecule::{
+        apply_all_bonded_forces_and_energy, apply_bonded_forces_and_energy, Angle, Dihedral,
+        Improper,
+    };
 
     use crate::lennard_jones_simulations::cell_subdivision::MolecularCoordinates;
 
@@ -688,35 +691,26 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    fn compute_bonded_forces(atoms: &mut [Particle], bonds: &[Bond], box_length: f64) -> () {
-        // DO NOT zero here if you plan to add LJ too.
-        // Instead: caller zeros forces once, then adds bonded + LJ, etc.
-
-        for b in bonds {
-            let rij = atoms[b.atom1].position - atoms[b.atom2].position;
-            let rij = minimum_image_convention(rij, box_length);
-            let r = safe_norm(rij.norm());
-            let dr = r - b.r0;
-
-            // force magnitude (harmonic)
-            let f_mag = -b.k * dr;
-            let f_vec = (rij / r) * f_mag;
-
-            atoms[b.atom1].force += f_vec;
-            atoms[b.atom2].force -= f_vec;
-        }
+    fn compute_bonded_forces(
+        atoms: &mut Vec<Particle>,
+        bonds: &[Bond],
+        angles: &[Angle],
+        dihedrals: &[Dihedral],
+        impropers: &[Improper],
+        box_length: f64,
+    ) -> f64 {
+        apply_all_bonded_forces_and_energy(atoms, bonds, angles, dihedrals, impropers, box_length)
     }
 
-    fn compute_bonded_energy(atoms: &[Particle], bonds: &[Bond], box_length: f64) -> f64 {
-        let mut e = 0.0;
-        for b in bonds {
-            let rij = atoms[b.atom1].position - atoms[b.atom2].position;
-            let rij = minimum_image_convention(rij, box_length);
-            let r = safe_norm(rij.norm());
-            let dr = r - b.r0;
-            e += 0.5 * b.k * dr * dr;
-        }
-        e
+    fn compute_bonded_energy(
+        atoms: &mut Vec<Particle>,
+        bonds: &[Bond],
+        angles: &[Angle],
+        dihedrals: &[Dihedral],
+        impropers: &[Improper],
+        box_length: f64,
+    ) -> f64 {
+        apply_all_bonded_forces_and_energy(atoms, bonds, angles, dihedrals, impropers, box_length)
     }
 
     pub fn compute_intermolecular_forces_systems(systems: &mut [System], box_length: f64) -> f64 {
@@ -1353,7 +1347,14 @@ pub mod lennard_jones_simulations {
             for a in sys.atoms.iter_mut() {
                 a.force = Vector3::zeros();
             }
-            compute_bonded_forces(&mut sys.atoms, &sys.bonds, box_length);
+            compute_bonded_forces(
+                &mut sys.atoms,
+                &sys.bonds,
+                &sys.angles,
+                &sys.dihedrals,
+                &sys.impropers,
+                box_length,
+            );
         }
         compute_intermolecular_forces_systems(systems, box_length);
 
@@ -1382,7 +1383,14 @@ pub mod lennard_jones_simulations {
                 for a in sys.atoms.iter_mut() {
                     a.force = Vector3::zeros();
                 }
-                compute_bonded_forces(&mut sys.atoms, &sys.bonds, box_length);
+                compute_bonded_forces(
+                    &mut sys.atoms,
+                    &sys.bonds,
+                    &sys.angles,
+                    &sys.dihedrals,
+                    &sys.impropers,
+                    box_length,
+                );
             }
 
             compute_intermolecular_forces_systems(systems, box_length);
@@ -1414,7 +1422,14 @@ pub mod lennard_jones_simulations {
                 for a in sys.atoms.iter() {
                     kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
                 }
-                potential_energy += compute_bonded_energy(&sys.atoms, &sys.bonds, box_length);
+                potential_energy += compute_bonded_energy(
+                    &mut sys.atoms,
+                    &sys.bonds,
+                    &sys.angles,
+                    &sys.dihedrals,
+                    &sys.impropers,
+                    box_length,
+                );
             }
             potential_energy += intermolecular_site_site_energy_systems(systems, box_length);
 
