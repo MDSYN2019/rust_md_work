@@ -47,3 +47,16 @@ You’ll need a stable Rust toolchain:
 
 ```bash
 rustup update
+
+
+## ⚡ MPI Parallel NVE Example
+
+An MPI-enabled NVE integration path is available behind the `mpi` feature flag.
+It parallelizes Lennard-Jones force/energy accumulation across ranks and uses collective reductions to build global forces.
+
+```bash
+cargo run --features mpi
+mpirun -n 4 cargo run --features mpi
+```
+
+The MPI code path is intended as a parallel-programming example (`run_md_nve_mpi` / `run_md_nve_particles_mpi`).
