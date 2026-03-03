@@ -15,6 +15,11 @@ env_logger = "0.11"
 assert-type-eq = "0.1.0"
 parameterized = "2.1.0"
 xdrfile = "0.3.0"
+mpi = { version = "0.8", optional = true }
+
+[features]
+default = []
+mpi = ["dep:mpi"]
 
 [profile.release]
 panic = "abort"

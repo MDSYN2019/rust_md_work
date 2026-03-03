@@ -281,6 +281,10 @@ pub mod lennard_jones_simulations {
     use error::compute_average_val;
 
     use log::{debug, info};
+    #[cfg(feature = "mpi")]
+    use mpi::collective::SystemOperation;
+    #[cfg(feature = "mpi")]
+    use mpi::traits::*;
     use nalgebra::{zero, Vector3};
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
@@ -1309,6 +1313,214 @@ pub mod lennard_jones_simulations {
         compute_average_val(&mut values, 2, number_of_steps as u64);
     }
 
+    #[cfg(feature = "mpi")]
+    fn rank_bounds(len: usize, rank: i32, size: i32) -> (usize, usize) {
+        let rank = rank as usize;
+        let size = size as usize;
+        let base = len / size;
+        let rem = len % size;
+
+        let start = rank * base + rank.min(rem);
+        let count = base + usize::from(rank < rem);
+        (start, start + count)
+    }
+
+    #[cfg(feature = "mpi")]
+    fn sync_particle_positions_and_velocities<C>(particles: &mut [Particle], world: &C)
+    where
+        C: mpi::topology::Communicator,
+    {
+        let n = particles.len();
+        let mut packed = vec![0.0_f64; n * 6];
+
+        if world.rank() == 0 {
+            for (idx, particle) in particles.iter().enumerate() {
+                let offset = idx * 6;
+                packed[offset] = particle.position.x;
+                packed[offset + 1] = particle.position.y;
+                packed[offset + 2] = particle.position.z;
+                packed[offset + 3] = particle.velocity.x;
+                packed[offset + 4] = particle.velocity.y;
+                packed[offset + 5] = particle.velocity.z;
+            }
+        }
+
+        world.process_at_rank(0).broadcast_into(&mut packed[..]);
+
+        for (idx, particle) in particles.iter_mut().enumerate() {
+            let offset = idx * 6;
+            particle.position.x = packed[offset];
+            particle.position.y = packed[offset + 1];
+            particle.position.z = packed[offset + 2];
+            particle.velocity.x = packed[offset + 3];
+            particle.velocity.y = packed[offset + 4];
+            particle.velocity.z = packed[offset + 5];
+        }
+    }
+
+    #[cfg(feature = "mpi")]
+    pub fn compute_forces_particles_mpi<C>(
+        particles: &mut Vec<Particle>,
+        box_length: f64,
+        world: &C,
+    ) -> f64
+    where
+        C: mpi::topology::Communicator + mpi::traits::CommunicatorCollectives,
+    {
+        let n = particles.len();
+        let (start, end) = rank_bounds(n, world.rank(), world.size());
+
+        let mut local_forces = vec![0.0_f64; n * 3];
+        let mut global_forces = vec![0.0_f64; n * 3];
+        let mut local_potential = 0.0_f64;
+        let mut global_potential = 0.0_f64;
+
+        for i in start..end {
+            for j in (i + 1)..n {
+                let r_vec = particles[i].position - particles[j].position;
+                let r_mic = minimum_image_convention(r_vec, box_length);
+                let r = r_mic.norm();
+                if r <= 1e-12 {
+                    continue;
+                }
+
+                let si = particles[i].lj_parameters.sigma;
+                let ei = particles[i].lj_parameters.epsilon;
+                let sj = particles[j].lj_parameters.sigma;
+                let ej = particles[j].lj_parameters.epsilon;
+                let sigma = 0.5 * (si + sj);
+                let epsilon = (ei * ej).sqrt();
+
+                let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+                let f_vec = (r_mic / r) * f_mag;
+
+                let ioff = 3 * i;
+                local_forces[ioff] -= f_vec.x;
+                local_forces[ioff + 1] -= f_vec.y;
+                local_forces[ioff + 2] -= f_vec.z;
+
+                let joff = 3 * j;
+                local_forces[joff] += f_vec.x;
+                local_forces[joff + 1] += f_vec.y;
+                local_forces[joff + 2] += f_vec.z;
+
+                local_potential += lennard_jones_potential(r, sigma, epsilon);
+            }
+        }
+
+        world.all_reduce_into(
+            &local_forces[..],
+            &mut global_forces[..],
+            SystemOperation::sum(),
+        );
+        world.all_reduce_into(
+            &local_potential,
+            &mut global_potential,
+            SystemOperation::sum(),
+        );
+
+        for (idx, particle) in particles.iter_mut().enumerate() {
+            let offset = 3 * idx;
+            particle.force = Vector3::new(
+                global_forces[offset],
+                global_forces[offset + 1],
+                global_forces[offset + 2],
+            );
+        }
+
+        global_potential
+    }
+
+    #[cfg(feature = "mpi")]
+    pub fn run_md_nve_particles_mpi<C>(
+        particles: &mut Vec<Particle>,
+        number_of_steps: i32,
+        dt: f64,
+        box_length: f64,
+        thermostat: &str,
+        world: &C,
+    ) where
+        C: mpi::topology::Communicator + mpi::traits::CommunicatorCollectives,
+    {
+        sync_particle_positions_and_velocities(particles, world);
+
+        let mut values: Vec<f32> = Vec::new();
+        let mut potential_energy = compute_forces_particles_mpi(particles, box_length, world);
+
+        let n = particles.len();
+        let (start, end) = rank_bounds(n, world.rank(), world.size());
+        let local_kinetic: f64 = particles[start..end]
+            .iter()
+            .map(|p| 0.5 * p.mass * p.velocity.norm_squared())
+            .sum();
+        let mut kinetic_energy = 0.0;
+        world.all_reduce_into(&local_kinetic, &mut kinetic_energy, SystemOperation::sum());
+        let mut total_energy = kinetic_energy + potential_energy;
+
+        if world.rank() == 0 {
+            info!(
+                "Init particle energy (MPI) | E_kin={kinetic_energy:.6} E_pot={potential_energy:.6} E_tot={total_energy:.6}"
+            );
+        }
+
+        let mut xi_nose_hoover = 0.0;
+
+        for _step in 0..number_of_steps {
+            let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(particles.len());
+            for p in particles.iter() {
+                a_old.push(p.force / p.mass);
+            }
+
+            for (atom, a_o) in particles.iter_mut().zip(a_old.iter()) {
+                atom.velocity += 0.5 * a_o * dt;
+            }
+
+            for atom in particles.iter_mut() {
+                atom.update_position_verlet(dt);
+            }
+
+            pbc_update(particles, box_length);
+            potential_energy = compute_forces_particles_mpi(particles, box_length, world);
+
+            for p in particles.iter_mut() {
+                let a_new = p.force / p.mass;
+                p.update_velocity_verlet(a_new, dt);
+            }
+
+            if thermostat == "berendsen" {
+                apply_thermostat_berendsen_particles(particles, 300.0, 0.1, dt);
+            } else if thermostat == "andersen" {
+                apply_andersen_collisions(particles, 300.0, 1.0, dt);
+            } else if thermostat == "nose_hoover" {
+                apply_thermostat_nose_hoover_particles(
+                    particles,
+                    300.0,
+                    10.0,
+                    dt,
+                    &mut xi_nose_hoover,
+                );
+            }
+
+            // Keep all ranks synchronized even when stochastic thermostats are used.
+            sync_particle_positions_and_velocities(particles, world);
+
+            let local_kinetic: f64 = particles[start..end]
+                .iter()
+                .map(|p| 0.5 * p.mass * p.velocity.norm_squared())
+                .sum();
+            world.all_reduce_into(&local_kinetic, &mut kinetic_energy, SystemOperation::sum());
+            total_energy = kinetic_energy + potential_energy;
+
+            if world.rank() == 0 {
+                values.push(total_energy as f32);
+            }
+        }
+
+        if world.rank() == 0 {
+            compute_average_val(&mut values, 2, number_of_steps as u64);
+        }
+    }
+
     /*
 
     Systems portion of the code
@@ -1453,6 +1665,39 @@ pub mod lennard_jones_simulations {
                 run_md_nve_particles(particles, number_of_steps, dt, box_length, thermostat);
             }
             InitOutput::Systems(systems) => {
+                run_md_nve_systems(systems, number_of_steps, dt, box_length, thermostat);
+            }
+        }
+    }
+
+    #[cfg(feature = "mpi")]
+    pub fn run_md_nve_mpi<C>(
+        state: &mut InitOutput,
+        number_of_steps: i32,
+        dt: f64,
+        box_length: f64,
+        thermostat: &str,
+        world: &C,
+    ) where
+        C: mpi::topology::Communicator + mpi::traits::CommunicatorCollectives,
+    {
+        match state {
+            InitOutput::Particles(particles) => {
+                run_md_nve_particles_mpi(
+                    particles,
+                    number_of_steps,
+                    dt,
+                    box_length,
+                    thermostat,
+                    world,
+                );
+            }
+            InitOutput::Systems(systems) => {
+                if world.rank() == 0 {
+                    info!(
+                        "MPI NVE currently supports particle systems; falling back to serial systems integration."
+                    );
+                }
                 run_md_nve_systems(systems, number_of_steps, dt, box_length, thermostat);
             }
         }
