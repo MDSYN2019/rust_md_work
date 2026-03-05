@@ -72,6 +72,7 @@ extern crate assert_type_eq;
 // src/error.rs
 // src/molcule.rs
 // src/parameters.rs
+pub mod cell;
 pub mod error;
 pub mod molecule;
 pub mod parameters;
@@ -180,11 +181,14 @@ pub mod cell_subdivision {
         pub half_length: Vector3<f64>,
         pub index: Vector3<usize>,
         pub atom_index: Vec<usize>,
+        pub head: Vec<Option<usize>>,
+        pub next: Vec<Option<usize>>,
     }
 
     impl SimulationBox {
         pub fn create_subcells(&self, n_cells: usize) -> Vec<MolecularCoordinates> {
-            let mut cells = Vec::with_capacity(n_cells * n_cells * n_cells);
+            let mut cells = Vec::with_capacity(n_cells * n_cells * n_cells); // create the cells
+            let n_cells = n_cells * n_cells * n_cells;
 
             let dx = self.x_dimension / n_cells as f64;
             let dy = self.y_dimension / n_cells as f64;
@@ -193,6 +197,7 @@ pub mod cell_subdivision {
             for ix in 0..n_cells {
                 for iy in 0..n_cells {
                     for iz in 0..n_cells {
+                        // create the cells and push the coordinates (with the center implemented)
                         cells.push(MolecularCoordinates {
                             center: Vector3::new(
                                 (ix as f64 + 0.5) * dx,
@@ -202,6 +207,8 @@ pub mod cell_subdivision {
                             half_length: Vector3::new(dx * 0.5, dy * 0.5, dz * 0.5),
                             index: Vector3::new(ix, iy, iz),
                             atom_index: Vec::new(),
+                            head: vec![None; n_cells],
+                            next: Vec::new(), //
                         });
                     }
                 }
@@ -213,7 +220,7 @@ pub mod cell_subdivision {
         pub fn store_atoms_in_cells_particles(
             &self,
             particles: &mut Vec<Particle>,
-            cells: &mut Vec<MolecularCoordinates>,
+            cells: &mut Vec<MolecularCoordinates>, // the created cells
             n_cells: usize,
         ) -> () {
             /*
@@ -235,11 +242,6 @@ pub mod cell_subdivision {
 
                 let cid = cell_id(ix, iy, iz, n_cells);
                 cells[cid].atom_index.push(i);
-
-                // compute if the distance from the cell center is less than the distance between the cell center and the outward perimeter of the cell
-                //if distance_to(&particle.position, &cell.center) <= cell.length {
-                //    cell.atom_index.push(i as i64);
-                //}
             }
         }
 
