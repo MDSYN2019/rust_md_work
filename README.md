@@ -69,3 +69,24 @@ The MPI code path is intended as a parallel-programming example (`run_md_nve_mpi
 make run
 make run-mpi NP=4
 ```
+
+## 🧪 Point-particle water-box style trajectory output (GRO + XTC)
+
+This repository now includes a runnable example binary that creates a simple Lennard-Jones point-particle fluid and writes outputs that can be opened in VMD:
+
+```bash
+cargo run --bin water_box
+```
+
+Generated files:
+- `water_box.gro` (final frame structure)
+- `water_box.xtc` (trajectory)
+
+### Open in VMD
+1. `vmd water_box.gro`
+2. In the VMD GUI: **File → Load Data Into Molecule...**
+3. Select `water_box.xtc` and load.
+
+> Notes:
+> - This is a coarse-grained, point-particle fluid setup (water-like in mass/density intent, not explicit 3-site/4-site water geometry).
+> - Coordinates are written in GRO/XTC-compatible units (nm in files).

@@ -1,6 +1,7 @@
 use crate::lennard_jones_simulations::{LJParameters, Particle};
 use nalgebra::Vector3;
 use std::fs;
+use xdrfile::{Frame, Trajectory, XTCTrajectory};
 
 fn default_mass(atom_name: &str) -> f64 {
     let trimmed = atom_name.trim();
@@ -160,6 +161,98 @@ pub fn read_gro(path: &str) -> Result<(Vec<Particle>, Option<Vector3<f64>>), Str
     read_gro_from_str(&contents)
 }
 
+pub fn write_gro(
+    path: &str,
+    particles: &[Particle],
+    box_dims: Vector3<f64>,
+    title: &str,
+) -> Result<(), String> {
+    // GRO expects distances in nm while this codebase stores positions in Å-like units.
+    let mut output = String::new();
+    output.push_str(title);
+    output.push('\n');
+    output.push_str(&format!("{:>5}\n", particles.len()));
+
+    for (index, particle) in particles.iter().enumerate() {
+        output.push_str(&format!(
+            "{:>5}{:<5}{:>5}{:>5}{:>8.3}{:>8.3}{:>8.3}\n",
+            1,
+            "WAT",
+            "OW",
+            index + 1,
+            particle.position.x / 10.0,
+            particle.position.y / 10.0,
+            particle.position.z / 10.0,
+        ));
+    }
+
+    output.push_str(&format!(
+        "{:>10.5}{:>10.5}{:>10.5}\n",
+        box_dims.x / 10.0,
+        box_dims.y / 10.0,
+        box_dims.z / 10.0,
+    ));
+
+    fs::write(path, output).map_err(|e| format!("failed to write gro file at '{path}': {e}"))
+}
+
+pub fn write_xtc(
+    path: &str,
+    frames: &[Vec<Particle>],
+    box_dims: Vector3<f64>,
+    dt_ps: f32,
+) -> Result<(), String> {
+    if frames.is_empty() {
+        return Err("cannot write xtc with zero frames".to_string());
+    }
+
+    let natoms = frames[0].len();
+    if natoms == 0 {
+        return Err("cannot write xtc with zero atoms".to_string());
+    }
+
+    for (idx, frame) in frames.iter().enumerate() {
+        if frame.len() != natoms {
+            return Err(format!(
+                "xtc frame {idx} has {} atoms but expected {natoms}",
+                frame.len()
+            ));
+        }
+    }
+
+    let mut trajectory =
+        XTCTrajectory::open_write(path).map_err(|e| format!("failed to open xtc file: {e}"))?;
+
+    let box_nm = [
+        [box_dims.x as f32 / 10.0, 0.0, 0.0],
+        [0.0, box_dims.y as f32 / 10.0, 0.0],
+        [0.0, 0.0, box_dims.z as f32 / 10.0],
+    ];
+
+    for (step, frame_particles) in frames.iter().enumerate() {
+        let mut frame = Frame::with_len(natoms);
+        frame.step = step;
+        frame.time = step as f32 * dt_ps;
+        frame.box_vector = box_nm;
+
+        for (atom_idx, particle) in frame_particles.iter().enumerate() {
+            frame.coords[atom_idx] = [
+                particle.position.x as f32 / 10.0,
+                particle.position.y as f32 / 10.0,
+                particle.position.z as f32 / 10.0,
+            ];
+        }
+
+        trajectory
+            .write(&frame)
+            .map_err(|e| format!("failed to write xtc frame {step}: {e}"))?;
+    }
+
+    trajectory
+        .flush()
+        .map_err(|e| format!("failed to flush xtc trajectory: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +285,36 @@ END\n";
 
         let box_dims = box_dims.expect("box dims should exist");
         assert!((box_dims.x - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn writes_gro_records() {
+        let particles = vec![particle_from_coordinates(
+            1,
+            "O",
+            Vector3::new(1.0, 2.0, 3.0),
+        )];
+
+        let path = std::env::temp_dir().join(format!(
+            "sang_md_test_{}_{}.gro",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+
+        write_gro(
+            path.to_str().expect("utf8 temp path"),
+            &particles,
+            Vector3::new(10.0, 10.0, 10.0),
+            "Test",
+        )
+        .expect("gro write should succeed");
+
+        let content = fs::read_to_string(&path).expect("gro file readable");
+        let _ = fs::remove_file(path);
+        assert!(content.contains("WAT"));
+        assert!(content.contains("0.100"));
     }
 }
