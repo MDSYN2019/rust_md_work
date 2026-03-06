@@ -90,3 +90,32 @@ Generated files:
 > Notes:
 > - This is a coarse-grained, point-particle fluid setup (water-like in mass/density intent, not explicit 3-site/4-site water geometry).
 > - Coordinates are written in GRO/XTC-compatible units (nm in files).
+
+## 🐍 Python interface (buildable scaffold)
+
+A minimal Python extension interface is available behind the `python` feature.
+It exposes:
+
+- `PyMdEngine(sigma, epsilon)` class
+- `PyMdEngine.force_at_distance(r)`
+- `lj_force_scalar(r, sigma, epsilon)`
+- `python_api_version()`
+
+### Build with maturin
+
+```bash
+pip install maturin
+maturin develop --features python
+```
+
+Then in Python:
+
+```python
+import sang_md_py
+
+engine = sang_md_py.PyMdEngine(1.0, 1.0)
+print(engine.force_at_distance(1.2))
+print(sang_md_py.lj_force_scalar(1.2, 1.0, 1.0))
+```
+
+This is intended as a starting point you can expand with trajectory stepping, system builders, and observables.
