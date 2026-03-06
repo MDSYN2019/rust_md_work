@@ -187,16 +187,17 @@ pub mod cell_subdivision {
 
     impl SimulationBox {
         pub fn create_subcells(&self, n_cells: usize) -> Vec<MolecularCoordinates> {
-            let mut cells = Vec::with_capacity(n_cells * n_cells * n_cells); // create the cells
-            let n_cells = n_cells * n_cells * n_cells;
+            let n_cells_per_dim = n_cells;
+            let n_cells_total = n_cells_per_dim * n_cells_per_dim * n_cells_per_dim;
+            let mut cells = Vec::with_capacity(n_cells_total); // create the cells
 
-            let dx = self.x_dimension / n_cells as f64;
-            let dy = self.y_dimension / n_cells as f64;
-            let dz = self.z_dimension / n_cells as f64;
+            let dx = self.x_dimension / n_cells_per_dim as f64;
+            let dy = self.y_dimension / n_cells_per_dim as f64;
+            let dz = self.z_dimension / n_cells_per_dim as f64;
 
-            for ix in 0..n_cells {
-                for iy in 0..n_cells {
-                    for iz in 0..n_cells {
+            for ix in 0..n_cells_per_dim {
+                for iy in 0..n_cells_per_dim {
+                    for iz in 0..n_cells_per_dim {
                         // create the cells and push the coordinates (with the center implemented)
                         cells.push(MolecularCoordinates {
                             center: Vector3::new(
@@ -207,7 +208,7 @@ pub mod cell_subdivision {
                             half_length: Vector3::new(dx * 0.5, dy * 0.5, dz * 0.5),
                             index: Vector3::new(ix, iy, iz),
                             atom_index: Vec::new(),
-                            head: vec![None; n_cells],
+                            head: vec![None; n_cells_total],
                             next: Vec::new(), //
                         });
                     }
