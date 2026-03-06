@@ -1,15 +1,17 @@
+use crate::lennard_jones_simulations::Particle;
+use nalgebra::Vector3;
 use std::f64;
 
 /// 3D vector helper (minimal).
 #[derive(Clone, Copy, Debug)]
-struct Vec3 {
-    x: f64,
-    y: f64,
-    z: f64,
+pub struct Vec3 {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
 }
 
 impl Vec3 {
-    fn new(x: f64, y: f64, z: f64) -> Self {
+    pub fn new(x: f64, y: f64, z: f64) -> Self {
         Self { x, y, z }
     }
 }
@@ -42,7 +44,7 @@ fn min_image(mut dx: f64, l: f64) -> f64 {
 /// - next[i] = next particle index in the same cell, or None
 ///
 /// This is the "linked list in arrays" approach.
-struct CellList {
+pub struct CellList {
     // domain
     box_len: Vec3,
     // cutoff and cell geometry
@@ -61,7 +63,7 @@ impl CellList {
     /// Create a cell list. We set cell_size = cutoff (common choice),
     /// and number of cells along each axis = floor(L / cell_size).
     /// Ensure nx,ny,nz >= 1.
-    fn new(box_len: Vec3, cutoff: f64) -> Self {
+    pub fn new(box_len: Vec3, cutoff: f64) -> Self {
         let cell_size = cutoff;
         let nx = (box_len.x / cell_size).floor().max(1.0) as usize;
         let ny = (box_len.y / cell_size).floor().max(1.0) as usize;
@@ -108,7 +110,7 @@ impl CellList {
     /// Map particle position to a cell coordinate (cx,cy,cz).
     /// Assumes positions can be outside box; we wrap them.
     #[inline]
-    fn pos_to_cell(&self, p: Vec3) -> (usize, usize, usize) {
+    fn pos_to_cell(&self, p: Vector3<f64>) -> (usize, usize, usize) {
         let x = wrap_0_l(p.x, self.box_len.x);
         let y = wrap_0_l(p.y, self.box_len.y);
         let z = wrap_0_l(p.z, self.box_len.z);
@@ -123,16 +125,16 @@ impl CellList {
     ///
     /// This is the "what is wrong with rebuilding the cell list?" part:
     /// it's cheap and common to rebuild every step (or every few steps with a skin).
-    fn rebuild(&mut self, positions: &[Vec3]) {
+    pub fn rebuild(&mut self, positions: &Vec<Particle>) {
         // clear heads
         self.head.fill(None);
 
         // reset next pointers for each particle
         self.next.clear();
-        self.next.resize(positions.len(), None);
+        self.next.resize(positions.len(), None); // resize using the length of the particle vec
 
-        for (i, &p) in positions.iter().enumerate() {
-            let (cx, cy, cz) = self.pos_to_cell(p);
+        for (i, p) in positions.iter().enumerate() {
+            let (cx, cy, cz) = self.pos_to_cell(p.position); // bookmark
             let c = self.cell_id(cx, cy, cz);
 
             // Insert particle i at the head of the cell's linked list:
@@ -155,7 +157,7 @@ impl CellList {
     ///
     /// This yields pairs (i,j) with j>i (no double-counting),
     /// and you can do your distance check + force calc inside the callback.
-    fn for_each_neighbor_pair<F>(&self, positions: &[Vec3], mut f: F)
+    pub fn for_each_neighbor_pair<F>(&self, positions: &Vec<Particle>, mut f: F)
     where
         F: FnMut(usize, usize, Vec3, f64), // (i, j, dr, r2)
     {
@@ -170,7 +172,7 @@ impl CellList {
                     // For each particle i in this cell
                     let mut it_i = self.iter_cell(c0);
                     while let Some(i) = it_i.next() {
-                        let pi = positions[i];
+                        let pi = &positions[i]; // why do we have to refernce this?
 
                         // Check 27 neighboring cells (including itself)
                         for dz in -1isize..=1 {
@@ -189,13 +191,22 @@ impl CellList {
                                             continue;
                                         }
 
-                                        let pj = positions[j];
+                                        let pj = &positions[j];
 
                                         // Minimum-image displacement
                                         let dr = Vec3::new(
-                                            min_image(pj.x - pi.x, self.box_len.x),
-                                            min_image(pj.y - pi.y, self.box_len.y),
-                                            min_image(pj.z - pi.z, self.box_len.z),
+                                            min_image(
+                                                pj.position[0] - pi.position[0],
+                                                self.box_len.x,
+                                            ),
+                                            min_image(
+                                                pj.position[1] - pi.position[1],
+                                                self.box_len.y,
+                                            ),
+                                            min_image(
+                                                pj.position[2] - pi.position[2],
+                                                self.box_len.z,
+                                            ),
                                         );
                                         let r2 = dr.x * dr.x + dr.y * dr.y + dr.z * dr.z;
 

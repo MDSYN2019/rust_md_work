@@ -118,7 +118,7 @@ fn dedup_permutation(v: &mut Vec<Vec<i32>>) {
 }
 
 pub mod cell_subdivision {
-
+    use crate::cell::cell::CellList;
     use crate::lennard_jones_simulations::Particle;
     use crate::molecule::molecule::System;
     use nalgebra::Vector3;
@@ -276,6 +276,8 @@ pub mod cell_subdivision {
 pub mod lennard_jones_simulations {
 
     use super::*; //
+
+    use crate::cell::cell::{CellList, Vec3};
     use crate::parameters::lj_parameters::lennard_jones_potential;
     use crate::thermostat_barostat::andersen::andersen::apply_andersen_collisions;
     use crate::thermostat_barostat::nose_hoover::nose_hoover::apply_thermostat_nose_hoover_particles;
@@ -1212,6 +1214,7 @@ pub mod lennard_jones_simulations {
         dt: f64,
         box_length: f64,
         thermostat: &str,
+        cutoff: f64,
     ) {
         let mut values: Vec<f32> = Vec::new();
 
@@ -1221,6 +1224,23 @@ pub mod lennard_jones_simulations {
             y_dimension: box_length,
             z_dimension: box_length,
         };
+
+        // BOOKMARK
+
+        let box_len = Vec3::new(box_length, box_length, box_length);
+        let mut cl = CellList::new(box_len, cutoff); // TODO CELL
+
+        cl.rebuild(&particles);
+
+        let mut count = 0usize;
+        cl.for_each_neighbor_pair(&particles, |i, j, dr, r2| {
+            count += 1;
+            // Insert your force calc here (LJ etc.)
+            println!(
+                "pair ({i},{j}) r2={r2:.4} dr=({:.3},{:.3},{:.3})",
+                dr.x, dr.y, dr.z
+            );
+        });
 
         // Create the subcells - here we have used a subdivision of 10 for the cells
         let mut subcells = simulation_box.create_subcells(10);
@@ -1661,10 +1681,18 @@ pub mod lennard_jones_simulations {
         dt: f64,
         box_length: f64,
         thermostat: &str,
+        cutoff: f64,
     ) {
         match state {
             InitOutput::Particles(particles) => {
-                run_md_nve_particles(particles, number_of_steps, dt, box_length, thermostat);
+                run_md_nve_particles(
+                    particles,
+                    number_of_steps,
+                    dt,
+                    box_length,
+                    thermostat,
+                    cutoff,
+                );
             }
             InitOutput::Systems(systems) => {
                 run_md_nve_systems(systems, number_of_steps, dt, box_length, thermostat);
@@ -1758,7 +1786,14 @@ mod tests {
                     return; // Exit early or handle the error as needed
                 }
             };
-        lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 1000, 0.5, 10.0, "berendsen");
+        lennard_jones_simulations::run_md_nve(
+            &mut new_simulation_md,
+            1000,
+            0.5,
+            10.0,
+            "berendsen",
+            30.0,
+        );
 
         let dof = match &new_simulation_md {
             lennard_jones_simulations::InitOutput::Particles(particles) => 3 * particles.len(),

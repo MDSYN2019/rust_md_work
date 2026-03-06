@@ -3,7 +3,7 @@
 //! ----------------------
 //!
 //! ------------------------
-//! Last Updated: 15/02/2026
+//! Last Updated: 06/03/2026
 //! ------------------------
 //!
 
@@ -68,9 +68,17 @@ fn main() {
             0.0005,
             10.0,
             "berendsen",
+            3.0,
         );
         // running a andersen thermostat simulation
-        lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 30, 0.0005, 10.0, "andersen");
+        lennard_jones_simulations::run_md_nve(
+            &mut new_simulation_md,
+            30,
+            0.0005,
+            10.0,
+            "andersen",
+            3.0,
+        );
     }
 
     // --------------------------------------------------------------------------------------//
@@ -95,6 +103,6 @@ fn main() {
 
     #[cfg(not(feature = "mpi"))]
     {
-        lennard_jones_simulations::run_md_nve(&mut systems_vec, 30, 0.0005, 10.0, "none");
+        lennard_jones_simulations::run_md_nve(&mut systems_vec, 30, 0.0005, 10.0, "none", 3.0);
     }
 }
