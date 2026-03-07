@@ -38,6 +38,7 @@ Implements Lennard-Jones (LJ) interactions, bonded forces, velocity-Verlet time 
 - pbc wrapping  
 - Configurable time-step, LJ parameters, masses, and box sizes  
 - PDB and GRO coordinate readers (`molecule::io::{read_pdb, read_gro}`)  
+- Martini `.itp` force-field reader + converter (`molecule::martini::MartiniForceField`)  
 
 ---
 
