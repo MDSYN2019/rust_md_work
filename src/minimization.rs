@@ -40,11 +40,11 @@ pub fn minimize_steepest_descent_particles(
             }
         }
 
-        println!("iter {iter:4}   max |F| = {max_f:.6}");
+        log::info!("Minimization iter {iter:>4} | max |F| = {max_f:.6}");
 
         // 3) check convergence
         if max_f < force_tol {
-            println!("Converged: max |F| = {max_f:.6} < {force_tol}");
+            log::info!("Converged | max |F| = {max_f:.6} < {force_tol}");
             break;
         }
 

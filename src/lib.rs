@@ -75,6 +75,8 @@ extern crate assert_type_eq;
 pub mod error;
 pub mod molecule;
 pub mod parameters;
+#[cfg(feature = "python")]
+mod python;
 pub mod thermostat_barostat;
 
 use std::collections::HashSet;
@@ -118,16 +120,9 @@ fn dedup_permutation(v: &mut Vec<Vec<i32>>) {
 
 pub mod cell_subdivision {
 
-    use super::*; //
-    use error::compute_average_val;
-    use nalgebra::{zero, Vector3};
-    // importing bonds
-    use crate::lennard_jones_simulations::InitOutput;
     use crate::lennard_jones_simulations::Particle;
-    use crate::molecule::molecule::apply_bonded_forces_and_energy;
-    use crate::molecule::molecule::make_h2_system;
-    use crate::molecule::molecule::Bond;
     use crate::molecule::molecule::System;
+    use nalgebra::Vector3;
     /*
     Create the subcells required for efficiently computing the intermolecular interactions
     within a certain radius cutoff rather than working with all the atoms in the system
@@ -143,12 +138,6 @@ pub mod cell_subdivision {
     }
 
     //fn cell_id_to_3d
-
-    fn distance_to(this: &Vector3<f64>, other: &Vector3<f64>) -> f64 {
-        // Calculate the distance using the Euclidean distance formula
-        ((this.x - other.x).powi(2) + (this.y - other.y).powi(2) + (this.z - other.z).powi(2))
-            .sqrt()
-    }
 
     fn position_to_cell_3d(
         pos: &Vector3<f64>,
@@ -293,16 +282,23 @@ pub mod lennard_jones_simulations {
 
     use error::compute_average_val;
 
+    use log::{debug, info};
+    #[cfg(feature = "mpi")]
+    use mpi::collective::SystemOperation;
+    #[cfg(feature = "mpi")]
+    use mpi::traits::*;
     use nalgebra::{zero, Vector3};
-    use rand::prelude::*;
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
 
     // importing bonds
-    use crate::molecule::molecule::apply_bonded_forces_and_energy;
     use crate::molecule::molecule::make_h2_system;
     use crate::molecule::molecule::Bond;
     use crate::molecule::molecule::System;
+    use crate::molecule::molecule::{
+        apply_all_bonded_forces_and_energy, apply_bonded_forces_and_energy, Angle, Dihedral,
+        Improper,
+    };
 
     use crate::lennard_jones_simulations::cell_subdivision::MolecularCoordinates;
 
@@ -329,7 +325,7 @@ pub mod lennard_jones_simulations {
 
     #[derive(Clone)]
     pub struct SimulationSummary {
-        energy: f64,
+        pub energy: f64,
     }
 
     pub enum InitOutput {
@@ -343,13 +339,13 @@ pub mod lennard_jones_simulations {
     }
 
     impl Particle {
-        fn distance(&self, other: &Particle) -> f64 {
+        pub fn distance(&self, other: &Particle) -> f64 {
             // Compute the distance between two particles
             (self.position - other.position).norm()
         }
 
         pub fn maxwellboltzmannvelocity(&mut self, temp: f64, mass: f64, _v_max: f64) {
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
 
             // Standard deviation based on MB distribution
             let sigma_mb = (temp / mass).sqrt();
@@ -362,7 +358,7 @@ pub mod lennard_jones_simulations {
             self.velocity[1] = normal.sample(&mut rng);
             self.velocity[2] = normal.sample(&mut rng);
 
-            println!("Assigned Maxwell-Boltzmann velocity: {:?}", self.velocity);
+            debug!("Assigned Maxwell-Boltzmann velocity: {:?}", self.velocity);
         }
 
         fn update_position_verlet(&mut self, dt: f64) -> () {
@@ -424,7 +420,7 @@ pub mod lennard_jones_simulations {
     }
 
     pub fn set_molecular_positions_and_velocities(system_mol: &mut InitOutput, temp: f64) -> () {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         // loop over each moleucle
 
         // Create a normal distribution with mean = 0, std = sigma
@@ -460,7 +456,7 @@ pub mod lennard_jones_simulations {
         temp: f64,
         mass: f64,
         v_max: f64,
-        box_dim_max: f64,
+        _box_dim_max: f64,
         use_atom: bool,
     ) -> Result<InitOutput, String> {
         /*
@@ -474,7 +470,7 @@ pub mod lennard_jones_simulations {
          */
         let mut vector_positions: Vec<Particle> = Vec::new();
         let mut vector_system_positions: Vec<System> = Vec::new();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         // Create the number of atoms in the system with the system as necessary
         if !use_atom {
             for index in 0..number_of_atoms {
@@ -641,10 +637,7 @@ pub mod lennard_jones_simulations {
         }
         let mut cell_match_storage: Vec<Vec<i32>> = Vec::new();
 
-        let n = particles.len(); // number of particles in the system
-                                 // initalize zero forces for each particle
-
-        for (i, particle) in particles.iter_mut().enumerate() {}
+        // initalize zero forces for each particle
 
         // Instead of looping over each particle,
         // will probably need to loop over the
@@ -672,11 +665,11 @@ pub mod lennard_jones_simulations {
         // loop over the cells
         for cell_i in 0..cell_match_storage.len() {
             // select cell entry
-            let cell_I = cell_match_storage[cell_i][0];
-            let cell_II = cell_match_storage[cell_i][1];
+            let cell_i_idx = cell_match_storage[cell_i][0];
+            let cell_ii_idx = cell_match_storage[cell_i][1];
 
-            for i_index in cells[cell_I as usize].atom_index.iter() {
-                for j_index in cells[cell_II as usize].atom_index.iter() {
+            for i_index in cells[cell_i_idx as usize].atom_index.iter() {
+                for j_index in cells[cell_ii_idx as usize].atom_index.iter() {
                     let r_vec = particles[*i_index].position - particles[*j_index].position;
                     let r_mic = minimum_image_convention(r_vec, box_length);
                     let r = r_mic.norm(); // compute the distance
@@ -695,8 +688,8 @@ pub mod lennard_jones_simulations {
                     // action = -reaction
                     particles[*i_index].force -= f_vec;
                     particles[*j_index].force += f_vec;
-                    println!(
-                        "The forces are {:?} {:?}",
+                    debug!(
+                        "Pair force update: i={:?}, j={:?}",
                         particles[*i_index].force, particles[*j_index].force
                     );
                 }
@@ -704,35 +697,94 @@ pub mod lennard_jones_simulations {
         }
     }
 
-    fn compute_bonded_forces(atoms: &mut [Particle], bonds: &[Bond], box_length: f64) -> () {
-        // DO NOT zero here if you plan to add LJ too.
-        // Instead: caller zeros forces once, then adds bonded + LJ, etc.
-
-        for b in bonds {
-            let rij = atoms[b.atom1].position - atoms[b.atom2].position;
-            let rij = minimum_image_convention(rij, box_length);
-            let r = safe_norm(rij.norm());
-            let dr = r - b.r0;
-
-            // force magnitude (harmonic)
-            let f_mag = -b.k * dr;
-            let f_vec = (rij / r) * f_mag;
-
-            atoms[b.atom1].force += f_vec;
-            atoms[b.atom2].force -= f_vec;
-        }
+    fn compute_bonded_forces(
+        atoms: &mut Vec<Particle>,
+        bonds: &[Bond],
+        angles: &[Angle],
+        dihedrals: &[Dihedral],
+        impropers: &[Improper],
+        box_length: f64,
+    ) -> f64 {
+        apply_all_bonded_forces_and_energy(atoms, bonds, angles, dihedrals, impropers, box_length)
     }
 
-    fn compute_bonded_energy(atoms: &[Particle], bonds: &[Bond], box_length: f64) -> f64 {
-        let mut e = 0.0;
-        for b in bonds {
-            let rij = atoms[b.atom1].position - atoms[b.atom2].position;
-            let rij = minimum_image_convention(rij, box_length);
-            let r = safe_norm(rij.norm());
-            let dr = r - b.r0;
-            e += 0.5 * b.k * dr * dr;
+    fn compute_bonded_energy(
+        atoms: &mut Vec<Particle>,
+        bonds: &[Bond],
+        angles: &[Angle],
+        dihedrals: &[Dihedral],
+        impropers: &[Improper],
+        box_length: f64,
+    ) -> f64 {
+        apply_all_bonded_forces_and_energy(atoms, bonds, angles, dihedrals, impropers, box_length)
+    }
+
+    pub fn compute_intermolecular_forces_systems(systems: &mut [System], box_length: f64) -> f64 {
+        /*
+        Compute Lennard-Jones interactions between atoms belonging to different systems.
+        Intra-molecular interactions are omitted here and handled by bonded terms.
+         */
+        let mut total_energy = 0.0;
+
+        for i in 0..systems.len() {
+            for j in (i + 1)..systems.len() {
+                let (left, right) = systems.split_at_mut(j);
+                let sys_i = &mut left[i];
+                let sys_j = &mut right[0];
+
+                for atom_i in sys_i.atoms.iter_mut() {
+                    for atom_j in sys_j.atoms.iter_mut() {
+                        let r_vec = atom_j.position - atom_i.position;
+                        let r_mic = minimum_image_convention(r_vec, box_length);
+                        let r = safe_norm(r_mic.norm());
+
+                        let sigma = 0.5 * (atom_i.lj_parameters.sigma + atom_j.lj_parameters.sigma);
+                        let epsilon =
+                            (atom_i.lj_parameters.epsilon * atom_j.lj_parameters.epsilon).sqrt();
+
+                        let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+                        let f_vec = (r_mic / r) * f_mag;
+
+                        atom_i.force -= f_vec;
+                        atom_j.force += f_vec;
+
+                        total_energy += lennard_jones_potential(r, sigma, epsilon);
+                    }
+                }
+            }
         }
-        e
+
+        total_energy
+    }
+
+    pub fn intermolecular_site_site_energy_systems(systems: &[System], box_length: f64) -> f64 {
+        /*
+        Compute Lennard-Jones potential energy between atoms in different systems.
+         */
+        let mut total_energy = 0.0;
+
+        for i in 0..systems.len() {
+            for j in (i + 1)..systems.len() {
+                let sys_i = &systems[i];
+                let sys_j = &systems[j];
+
+                for atom_i in sys_i.atoms.iter() {
+                    for atom_j in sys_j.atoms.iter() {
+                        let r_vec = atom_j.position - atom_i.position;
+                        let r_mic = minimum_image_convention(r_vec, box_length);
+                        let r = safe_norm(r_mic.norm());
+
+                        let sigma = 0.5 * (atom_i.lj_parameters.sigma + atom_j.lj_parameters.sigma);
+                        let epsilon =
+                            (atom_i.lj_parameters.epsilon * atom_j.lj_parameters.epsilon).sqrt();
+
+                        total_energy += lennard_jones_potential(r, sigma, epsilon);
+                    }
+                }
+            }
+        }
+
+        total_energy
     }
 
     pub fn compute_bonded_forces_system(
@@ -890,8 +942,8 @@ pub mod lennard_jones_simulations {
                     p.velocity *= lambda;
                 }
 
-                println!(
-                    "Thermostat [Particles]: T = {:.2} -> {:.2}, λ = {:.4}",
+                info!(
+                    "Thermostat[particles] T: {:.2} -> {:.2} (scale λ={:.4})",
                     current_temperature, target_temperature, lambda
                 );
             }
@@ -920,8 +972,8 @@ pub mod lennard_jones_simulations {
                         a.velocity *= lambda;
                     }
 
-                    println!(
-                        "Thermostat [System #{si}]: T = {:.2} -> {:.2}, λ = {:.4}",
+                    info!(
+                        "Thermostat[system {si}] T: {:.2} -> {:.2} (scale λ={:.4})",
                         current_temperature, target_temperature, lambda
                     );
                 }
@@ -982,7 +1034,7 @@ pub mod lennard_jones_simulations {
             // Propagates the half step
             run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
 
-            let mut simulation_box = cell_subdivision::SimulationBox {
+            let simulation_box = cell_subdivision::SimulationBox {
                 x_dimension: box_length,
                 y_dimension: box_length,
                 z_dimension: box_length,
@@ -1047,7 +1099,6 @@ pub mod lennard_jones_simulations {
         /*
         compute the total kinetic + potential energy of the system
          */
-        let mut bond_energy = 0.0;
         let mut kinetic_energy = 0.0;
         let mut potential_energy = 0.0;
 
@@ -1071,8 +1122,8 @@ pub mod lennard_jones_simulations {
             }
         }
 
-        println!(
-            "The potential energy is {}",
+        debug!(
+            "Total instantaneous energy: {:.6}",
             kinetic_energy + potential_energy
         );
 
@@ -1112,7 +1163,7 @@ pub mod lennard_jones_simulations {
             Forces should be recomputed BEFORE this half-kikc
              */
 
-            let mut simulation_box = cell_subdivision::SimulationBox {
+            let simulation_box = cell_subdivision::SimulationBox {
                 x_dimension: box_length,
                 y_dimension: box_length,
                 z_dimension: box_length,
@@ -1133,7 +1184,7 @@ pub mod lennard_jones_simulations {
             probability ~ nu * dt ( valid when nu * dt is small; otherwise use 1 - exp(-nu * dt)
              */
 
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let p_coll = nu * dt;
 
             for p in particles.iter_mut() {
@@ -1162,11 +1213,10 @@ pub mod lennard_jones_simulations {
         box_length: f64,
         thermostat: &str,
     ) {
-        let mut final_summary = SimulationSummary { energy: 0.0 };
         let mut values: Vec<f32> = Vec::new();
 
         // Create the subcells for the simulation box
-        let mut simulation_box = cell_subdivision::SimulationBox {
+        let simulation_box = cell_subdivision::SimulationBox {
             x_dimension: box_length,
             y_dimension: box_length,
             z_dimension: box_length,
@@ -1186,9 +1236,9 @@ pub mod lennard_jones_simulations {
         let mut potential_energy = site_site_energy_calculation(particles, box_length);
         let mut total_energy = kinetic_energy + potential_energy;
 
-        println!(
-        "[init] E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
-    );
+        info!(
+            "Init particle energy | E_kin={kinetic_energy:.6} E_pot={potential_energy:.6} E_tot={total_energy:.6}"
+        );
 
         // only used if we are using nose_hoover
         let mut xi_nose_hoover = 0.0;
@@ -1232,7 +1282,7 @@ pub mod lennard_jones_simulations {
 
             // 6) measure temperature
             let dof = 3 * particles.len();
-            let system_temperature = compute_temperature_particles(&particles, dof);
+            let _system_temperature = compute_temperature_particles(&particles, dof);
 
             //println!("T = {system_temperature:.4}");
 
@@ -1259,11 +1309,218 @@ pub mod lennard_jones_simulations {
             potential_energy = site_site_energy_calculation(particles, box_length);
             total_energy = kinetic_energy + potential_energy;
 
-            final_summary.energy = total_energy;
             values.push(total_energy as f32);
         }
         // Optional: your running-average helper
         compute_average_val(&mut values, 2, number_of_steps as u64);
+    }
+
+    #[cfg(feature = "mpi")]
+    fn rank_bounds(len: usize, rank: i32, size: i32) -> (usize, usize) {
+        let rank = rank as usize;
+        let size = size as usize;
+        let base = len / size;
+        let rem = len % size;
+
+        let start = rank * base + rank.min(rem);
+        let count = base + usize::from(rank < rem);
+        (start, start + count)
+    }
+
+    #[cfg(feature = "mpi")]
+    fn sync_particle_positions_and_velocities<C>(particles: &mut [Particle], world: &C)
+    where
+        C: mpi::topology::Communicator,
+    {
+        let n = particles.len();
+        let mut packed = vec![0.0_f64; n * 6];
+
+        if world.rank() == 0 {
+            for (idx, particle) in particles.iter().enumerate() {
+                let offset = idx * 6;
+                packed[offset] = particle.position.x;
+                packed[offset + 1] = particle.position.y;
+                packed[offset + 2] = particle.position.z;
+                packed[offset + 3] = particle.velocity.x;
+                packed[offset + 4] = particle.velocity.y;
+                packed[offset + 5] = particle.velocity.z;
+            }
+        }
+
+        world.process_at_rank(0).broadcast_into(&mut packed[..]);
+
+        for (idx, particle) in particles.iter_mut().enumerate() {
+            let offset = idx * 6;
+            particle.position.x = packed[offset];
+            particle.position.y = packed[offset + 1];
+            particle.position.z = packed[offset + 2];
+            particle.velocity.x = packed[offset + 3];
+            particle.velocity.y = packed[offset + 4];
+            particle.velocity.z = packed[offset + 5];
+        }
+    }
+
+    #[cfg(feature = "mpi")]
+    pub fn compute_forces_particles_mpi<C>(
+        particles: &mut Vec<Particle>,
+        box_length: f64,
+        world: &C,
+    ) -> f64
+    where
+        C: mpi::topology::Communicator + mpi::traits::CommunicatorCollectives,
+    {
+        let n = particles.len();
+        let (start, end) = rank_bounds(n, world.rank(), world.size());
+
+        let mut local_forces = vec![0.0_f64; n * 3];
+        let mut global_forces = vec![0.0_f64; n * 3];
+        let mut local_potential = 0.0_f64;
+        let mut global_potential = 0.0_f64;
+
+        for i in start..end {
+            for j in (i + 1)..n {
+                let r_vec = particles[i].position - particles[j].position;
+                let r_mic = minimum_image_convention(r_vec, box_length);
+                let r = r_mic.norm();
+                if r <= 1e-12 {
+                    continue;
+                }
+
+                let si = particles[i].lj_parameters.sigma;
+                let ei = particles[i].lj_parameters.epsilon;
+                let sj = particles[j].lj_parameters.sigma;
+                let ej = particles[j].lj_parameters.epsilon;
+                let sigma = 0.5 * (si + sj);
+                let epsilon = (ei * ej).sqrt();
+
+                let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+                let f_vec = (r_mic / r) * f_mag;
+
+                let ioff = 3 * i;
+                local_forces[ioff] -= f_vec.x;
+                local_forces[ioff + 1] -= f_vec.y;
+                local_forces[ioff + 2] -= f_vec.z;
+
+                let joff = 3 * j;
+                local_forces[joff] += f_vec.x;
+                local_forces[joff + 1] += f_vec.y;
+                local_forces[joff + 2] += f_vec.z;
+
+                local_potential += lennard_jones_potential(r, sigma, epsilon);
+            }
+        }
+
+        world.all_reduce_into(
+            &local_forces[..],
+            &mut global_forces[..],
+            SystemOperation::sum(),
+        );
+        world.all_reduce_into(
+            &local_potential,
+            &mut global_potential,
+            SystemOperation::sum(),
+        );
+
+        for (idx, particle) in particles.iter_mut().enumerate() {
+            let offset = 3 * idx;
+            particle.force = Vector3::new(
+                global_forces[offset],
+                global_forces[offset + 1],
+                global_forces[offset + 2],
+            );
+        }
+
+        global_potential
+    }
+
+    #[cfg(feature = "mpi")]
+    pub fn run_md_nve_particles_mpi<C>(
+        particles: &mut Vec<Particle>,
+        number_of_steps: i32,
+        dt: f64,
+        box_length: f64,
+        thermostat: &str,
+        world: &C,
+    ) where
+        C: mpi::topology::Communicator + mpi::traits::CommunicatorCollectives,
+    {
+        sync_particle_positions_and_velocities(particles, world);
+
+        let mut values: Vec<f32> = Vec::new();
+        let mut potential_energy = compute_forces_particles_mpi(particles, box_length, world);
+
+        let n = particles.len();
+        let (start, end) = rank_bounds(n, world.rank(), world.size());
+        let local_kinetic: f64 = particles[start..end]
+            .iter()
+            .map(|p| 0.5 * p.mass * p.velocity.norm_squared())
+            .sum();
+        let mut kinetic_energy = 0.0;
+        world.all_reduce_into(&local_kinetic, &mut kinetic_energy, SystemOperation::sum());
+        let mut total_energy = kinetic_energy + potential_energy;
+
+        if world.rank() == 0 {
+            info!(
+                "Init particle energy (MPI) | E_kin={kinetic_energy:.6} E_pot={potential_energy:.6} E_tot={total_energy:.6}"
+            );
+        }
+
+        let mut xi_nose_hoover = 0.0;
+
+        for _step in 0..number_of_steps {
+            let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(particles.len());
+            for p in particles.iter() {
+                a_old.push(p.force / p.mass);
+            }
+
+            for (atom, a_o) in particles.iter_mut().zip(a_old.iter()) {
+                atom.velocity += 0.5 * a_o * dt;
+            }
+
+            for atom in particles.iter_mut() {
+                atom.update_position_verlet(dt);
+            }
+
+            pbc_update(particles, box_length);
+            potential_energy = compute_forces_particles_mpi(particles, box_length, world);
+
+            for p in particles.iter_mut() {
+                let a_new = p.force / p.mass;
+                p.update_velocity_verlet(a_new, dt);
+            }
+
+            if thermostat == "berendsen" {
+                apply_thermostat_berendsen_particles(particles, 300.0, 0.1, dt);
+            } else if thermostat == "andersen" {
+                apply_andersen_collisions(particles, 300.0, 1.0, dt);
+            } else if thermostat == "nose_hoover" {
+                apply_thermostat_nose_hoover_particles(
+                    particles,
+                    300.0,
+                    10.0,
+                    dt,
+                    &mut xi_nose_hoover,
+                );
+            }
+
+            // Keep all ranks synchronized even when stochastic thermostats are used.
+            sync_particle_positions_and_velocities(particles, world);
+
+            let local_kinetic: f64 = particles[start..end]
+                .iter()
+                .map(|p| 0.5 * p.mass * p.velocity.norm_squared())
+                .sum();
+            world.all_reduce_into(&local_kinetic, &mut kinetic_energy, SystemOperation::sum());
+            total_energy = kinetic_energy + potential_energy;
+
+            if world.rank() == 0 {
+                values.push(total_energy as f32);
+            }
+        }
+
+        if world.rank() == 0 {
+            compute_average_val(&mut values, 2, number_of_steps as u64);
+        }
     }
 
     /*
@@ -1279,14 +1536,13 @@ pub mod lennard_jones_simulations {
         box_length: f64,
         thermostat: &str,
     ) {
-        let mut final_summary = SimulationSummary { energy: 0.0 };
         let mut values: Vec<f32> = Vec::new();
         let mut total_energy = 0.0;
         let mut kinetic_energy = 0.0;
         let mut potential_energy = 0.0;
 
         // Create the subcells for the simulation box
-        let mut simulation_box = cell_subdivision::SimulationBox {
+        let simulation_box = cell_subdivision::SimulationBox {
             x_dimension: box_length,
             y_dimension: box_length,
             z_dimension: box_length,
@@ -1297,25 +1553,31 @@ pub mod lennard_jones_simulations {
         simulation_box.store_atoms_in_cells_systems(systems, &mut subcells, 10);
         // --- initial forces and energy ---
 
-        println!(
-        "[init systems] particle  E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}, E_tot = {total_energy:.6}"
-	);
+        info!(
+            "Init systems energy | E_kin={kinetic_energy:.6} E_pot={potential_energy:.6} E_tot={total_energy:.6}"
+        );
 
         for sys in systems.iter_mut() {
             for a in sys.atoms.iter_mut() {
                 a.force = Vector3::zeros();
             }
-            compute_bonded_forces(&mut sys.atoms, &sys.bonds, box_length);
+            compute_bonded_forces(
+                &mut sys.atoms,
+                &sys.bonds,
+                &sys.angles,
+                &sys.dihedrals,
+                &sys.impropers,
+                box_length,
+            );
         }
+        compute_intermolecular_forces_systems(systems, box_length);
 
         // this is only used if we apply nose hoover
         let mut xi_nose_hoover = vec![0.0; systems.len()];
 
         // --- time integration loop ---
         for _step in 0..number_of_steps {
-            // For each system independently
-            for (s, sys) in systems.iter_mut().enumerate() {
-                // Create place to store the old accelerations
+            for sys in systems.iter_mut() {
                 let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(sys.atoms.len());
 
                 for a in sys.atoms.iter() {
@@ -1326,33 +1588,35 @@ pub mod lennard_jones_simulations {
                     atom.velocity += 0.5 * a_o * dt;
                 }
 
-                // 2) drift positions
                 for atom in sys.atoms.iter_mut() {
                     atom.update_position_verlet(dt);
                 }
 
-                // 3) PBC
                 pbc_update(&mut sys.atoms, box_length);
-
-                // recompute forces (bonded; you can add LJ here too if you want) - at the moment, only
-                // accounting for the intramolecular forces, not between the molecules
 
                 for a in sys.atoms.iter_mut() {
                     a.force = Vector3::zeros();
                 }
+                compute_bonded_forces(
+                    &mut sys.atoms,
+                    &sys.bonds,
+                    &sys.angles,
+                    &sys.dihedrals,
+                    &sys.impropers,
+                    box_length,
+                );
+            }
 
-                compute_bonded_forces(&mut sys.atoms, &sys.bonds, box_length);
+            compute_intermolecular_forces_systems(systems, box_length);
 
-                // 5) velocity update (Verlet - second half step)
+            for (s, sys) in systems.iter_mut().enumerate() {
                 for a in sys.atoms.iter_mut() {
                     let a_new = a.force / a.mass;
                     a.update_velocity_verlet(a_new, dt);
                 }
 
-                // 5) thermostat per system (optional)
                 let dof = 3 * sys.atoms.len();
-                let system_temperature = compute_temperature_particles(&sys.atoms, dof);
-                // println!("T = {system_temperature:.4}");
+                let _system_temperature = compute_temperature_particles(&sys.atoms, dof);
                 if thermostat == "berendsen" {
                     apply_thermostat_berendsen_particles(&mut sys.atoms, 300.0, 0.1, dt);
                 } else if thermostat == "nose_hoover" {
@@ -1366,22 +1630,26 @@ pub mod lennard_jones_simulations {
                 }
             }
 
-            // recompute global energy after this step
             kinetic_energy = 0.0;
             potential_energy = 0.0;
-            // bonded forces
             for sys in systems.iter_mut() {
                 for a in sys.atoms.iter() {
                     kinetic_energy += 0.5 * a.mass * a.velocity.norm_squared();
                 }
-                potential_energy += compute_bonded_energy(&sys.atoms, &sys.bonds, box_length);
-                // bonded forces
-                //potential_energy += site_site_energy_calculation(&mut sys.atoms, box_length);
+                potential_energy += compute_bonded_energy(
+                    &mut sys.atoms,
+                    &sys.bonds,
+                    &sys.angles,
+                    &sys.dihedrals,
+                    &sys.impropers,
+                    box_length,
+                );
             }
+            potential_energy += intermolecular_site_site_energy_systems(systems, box_length);
 
             total_energy = kinetic_energy + potential_energy;
-            values.push(total_energy as f32); // compute the total energy per timestep
-            println!("step {_step}: E_tot = {total_energy:.6}, E_kin = {kinetic_energy:.6}, E_pot = {potential_energy:.6}");
+            values.push(total_energy as f32);
+            info!("Step {_step:>4} | E_tot={total_energy:.6} E_kin={kinetic_energy:.6} E_pot={potential_energy:.6}");
         }
 
         compute_average_val(&mut values, 2, number_of_steps as u64);
@@ -1403,16 +1671,50 @@ pub mod lennard_jones_simulations {
             }
         }
     }
+
+    #[cfg(feature = "mpi")]
+    pub fn run_md_nve_mpi<C>(
+        state: &mut InitOutput,
+        number_of_steps: i32,
+        dt: f64,
+        box_length: f64,
+        thermostat: &str,
+        world: &C,
+    ) where
+        C: mpi::topology::Communicator + mpi::traits::CommunicatorCollectives,
+    {
+        match state {
+            InitOutput::Particles(particles) => {
+                run_md_nve_particles_mpi(
+                    particles,
+                    number_of_steps,
+                    dt,
+                    box_length,
+                    thermostat,
+                    world,
+                );
+            }
+            InitOutput::Systems(systems) => {
+                if world.rank() == 0 {
+                    info!(
+                        "MPI NVE currently supports particle systems; falling back to serial systems integration."
+                    );
+                }
+                run_md_nve_systems(systems, number_of_steps, dt, box_length, thermostat);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use log::{error, info};
 
     // lennard-jones double loop test
     #[test]
     fn test_double_loop() {
-        let lj_params = lennard_jones_simulations::LJParameters {
+        let _lj_params = lennard_jones_simulations::LJParameters {
             epsilon: 1.0,
             sigma: 1.0,
             number_of_atoms: 2,
@@ -1425,9 +1727,9 @@ mod tests {
 
     #[test]
     fn test_lennard_jones() {
-        let sigma = 1.0;
-        let epsilon = 1.0;
-        let lj_params_new = lennard_jones_simulations::LJParameters {
+        let _sigma = 1.0;
+        let _epsilon = 1.0;
+        let _lj_params_new = lennard_jones_simulations::LJParameters {
             epsilon: 1.0,
             sigma: 1.0,
             number_of_atoms: 10,
@@ -1452,7 +1754,7 @@ mod tests {
                 // How to handle errors - we are returning a result or a string
                 Ok(atoms) => atoms,
                 Err(e) => {
-                    eprintln!("Failed to create atoms: {}", e); //Log the error
+                    error!("Failed to create atoms: {e}");
                     return; // Exit early or handle the error as needed
                 }
             };
@@ -1460,14 +1762,14 @@ mod tests {
 
         let dof = match &new_simulation_md {
             lennard_jones_simulations::InitOutput::Particles(particles) => 3 * particles.len(),
-            &lennard_jones_simulations::InitOutput::Systems(systems) => {
+            lennard_jones_simulations::InitOutput::Systems(systems) => {
                 3 * systems.iter().map(|sys| sys.atoms.len()).sum::<usize>()
             }
         };
         //let dof = 3 * new_simulation_md.len();
         // compute the final temperature of the system
         let t = lennard_jones_simulations::compute_temperature(&mut new_simulation_md, dof);
-        println!("Temperature is {}, and target is {}", t, t0);
+        info!("Final temperature={t:.3}, target={t0:.3}");
         assert!((t - t0).abs() < 5.0, "Temperature should approach target");
     }
 }

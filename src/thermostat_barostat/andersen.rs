@@ -2,8 +2,7 @@ pub mod andersen {
 
     use crate::cell_subdivision;
     use crate::lennard_jones_simulations::{compute_forces_particles, Particle};
-    use nalgebra::{zero, Vector3};
-    use rand::prelude::*;
+    use nalgebra::Vector3;
     use rand::Rng;
     use rand_distr::{Distribution, Normal};
 
@@ -17,9 +16,6 @@ pub mod andersen {
         /*
         Initialize system and compute the forces and energy
          */
-        let mut t = 0.0;
-        let mut switch = 1;
-
         while target_temperature < t_max {
             // Propagates the half step
             //run_md_andersen_particles(particles, dt, box_length, target_temperature, 1.0, switch);
@@ -108,7 +104,7 @@ pub mod andersen {
             /*
             Forces should be recomputed BEFORE this half-kikc
              */
-            let mut simulation_box = cell_subdivision::SimulationBox {
+            let simulation_box = cell_subdivision::SimulationBox {
                 x_dimension: _box_length,
                 y_dimension: _box_length,
                 z_dimension: _box_length,
