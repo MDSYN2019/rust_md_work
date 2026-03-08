@@ -120,3 +120,17 @@ print(sang_md_py.lj_force_scalar(1.2, 1.0, 1.0))
 ```
 
 This is intended as a starting point you can expand with trajectory stepping, system builders, and observables.
+
+## 🧪 Martini coarse-grained water-box NVT example
+
+A dedicated Martini-style coarse-grained water box example is also available. It runs a single-bead solvent in an NVT-like setup using velocity-Verlet integration with a Berendsen thermostat and writes GRO/XTC outputs:
+
+```bash
+cargo run --bin martini_water_box
+```
+
+Generated files:
+- `martini_water_box.gro`
+- `martini_water_box.xtc`
+
+This is intended as a lightweight CG solvent demo that you can visualize in VMD with the same loading flow used for `water_box.xtc`.
