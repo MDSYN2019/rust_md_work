@@ -1315,6 +1315,83 @@ pub mod lennard_jones_simulations {
         compute_average_val(&mut values, 2, number_of_steps as u64);
     }
 
+    fn single_particle_energy(particles: &[Particle], idx: usize, box_length: f64) -> f64 {
+        let mut energy = 0.0;
+        let sigma_i = particles[idx].lj_parameters.sigma;
+        let epsilon_i = particles[idx].lj_parameters.epsilon;
+
+        for (j, other) in particles.iter().enumerate() {
+            if j == idx {
+                continue;
+            }
+
+            let sigma_j = other.lj_parameters.sigma;
+            let epsilon_j = other.lj_parameters.epsilon;
+            let sigma = (sigma_i + sigma_j) / 2.0;
+            let epsilon = (epsilon_i * epsilon_j).sqrt();
+            let r_vec = other.position - particles[idx].position;
+            let r = minimum_image_convention(r_vec, box_length).norm();
+            energy += lennard_jones_potential(r, sigma, epsilon);
+        }
+
+        energy
+    }
+
+    pub fn run_monte_carlo_particles(
+        particles: &mut Vec<Particle>,
+        number_of_steps: i32,
+        box_length: f64,
+        temperature: f64,
+    ) {
+        let mut values: Vec<f32> = Vec::new();
+        let mut rng = rand::rng();
+        let beta = 1.0 / temperature;
+        let max_displacement = 0.05 * box_length;
+        let mut accepted_moves: usize = 0;
+        let mut attempted_moves: usize = 0;
+
+        for _step in 0..number_of_steps {
+            for idx in 0..particles.len() {
+                let previous_position = particles[idx].position;
+                let previous_energy = single_particle_energy(particles, idx, box_length);
+
+                let displacement = Vector3::new(
+                    rng.random_range(-max_displacement..max_displacement),
+                    rng.random_range(-max_displacement..max_displacement),
+                    rng.random_range(-max_displacement..max_displacement),
+                );
+
+                particles[idx].position += displacement;
+                particles[idx].position.x = particles[idx].position.x.rem_euclid(box_length);
+                particles[idx].position.y = particles[idx].position.y.rem_euclid(box_length);
+                particles[idx].position.z = particles[idx].position.z.rem_euclid(box_length);
+
+                let trial_energy = single_particle_energy(particles, idx, box_length);
+                let delta_energy = trial_energy - previous_energy;
+                let metropolis = (-beta * delta_energy).exp();
+
+                let accepted = delta_energy <= 0.0 || rng.random::<f64>() < metropolis;
+                attempted_moves += 1;
+
+                if accepted {
+                    accepted_moves += 1;
+                } else {
+                    particles[idx].position = previous_position;
+                }
+            }
+
+            let potential_energy = site_site_energy_calculation(particles, box_length);
+            values.push(potential_energy as f32);
+        }
+
+        let acceptance = accepted_moves as f64 / attempted_moves.max(1) as f64;
+        info!(
+            "Monte Carlo complete | attempted={} accepted={} ratio={acceptance:.4}",
+            attempted_moves, accepted_moves
+        );
+        compute_average_val(&mut values, 2, number_of_steps as u64);
+    }
+
     #[cfg(feature = "mpi")]
     fn rank_bounds(len: usize, rank: i32, size: i32) -> (usize, usize) {
         let rank = rank as usize;
@@ -1662,8 +1739,24 @@ pub mod lennard_jones_simulations {
         box_length: f64,
         thermostat: &str,
     ) {
+        if thermostat == "monte_carlo" {
+            match state {
+                InitOutput::Particles(particles) => {
+                    run_monte_carlo_particles(particles, number_of_steps, box_length, 300.0);
+                }
+                InitOutput::Systems(_systems) => {
+                    info!(
+                        "Monte Carlo mode is currently supported for particle simulations only; using velocity Verlet for systems."
+                    );
+                }
+            }
+        }
+
         match state {
             InitOutput::Particles(particles) => {
+                if thermostat == "monte_carlo" {
+                    return;
+                }
                 run_md_nve_particles(particles, number_of_steps, dt, box_length, thermostat);
             }
             InitOutput::Systems(systems) => {
