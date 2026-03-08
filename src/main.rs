@@ -19,12 +19,28 @@ and neutrons in nuclei, and nuclear matter.
 use log::error;
 #[cfg(feature = "mpi")]
 use mpi::traits::*;
+use std::env;
 
 use sang_md::lennard_jones_simulations; // this is in lib
 use sang_md::molecule::molecule; // this is not in lib - this is the molecule module
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    let integrator = env::args()
+        .find_map(|arg| arg.strip_prefix("--integrator=").map(str::to_owned))
+        .unwrap_or_else(|| "velocity_verlet".to_string());
+
+    let md_mode = match integrator.as_str() {
+        "velocity_verlet" => "berendsen",
+        "monte_carlo" => "monte_carlo",
+        other => {
+            log::warn!(
+                "Unknown integrator '{other}', falling back to velocity_verlet (Berendsen thermostat)."
+            );
+            "berendsen"
+        }
+    };
 
     // main code for running molecular dynamics simulations - version 2
 
@@ -47,30 +63,32 @@ fn main() {
     #[cfg(feature = "mpi")]
     {
         if world.rank() == 0 {
-            log::info!("Running MPI-enabled NVE example");
+            log::info!("Running MPI-enabled NVE example with integrator={integrator}");
         }
         lennard_jones_simulations::run_md_nve_mpi(
             &mut new_simulation_md,
             30,
             0.0005,
             10.0,
-            "berendsen",
+            md_mode,
             &world,
         );
     }
 
     #[cfg(not(feature = "mpi"))]
     {
-        // running a berendsen thermostat simulation
-        lennard_jones_simulations::run_md_nve(
-            &mut new_simulation_md,
-            30,
-            0.0005,
-            10.0,
-            "berendsen",
-        );
-        // running a andersen thermostat simulation
-        lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 30, 0.0005, 10.0, "andersen");
+        // running either the default velocity-verlet simulation or monte-carlo simulation
+        lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 30, 0.0005, 10.0, md_mode);
+        if md_mode != "monte_carlo" {
+            // running an andersen thermostat simulation after velocity-verlet demo
+            lennard_jones_simulations::run_md_nve(
+                &mut new_simulation_md,
+                30,
+                0.0005,
+                10.0,
+                "andersen",
+            );
+        }
     }
 
     // --------------------------------------------------------------------------------------//
