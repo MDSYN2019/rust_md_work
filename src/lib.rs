@@ -77,6 +77,7 @@ pub mod molecule;
 pub mod parameters;
 #[cfg(feature = "python")]
 mod python;
+pub mod stat_mech_free_energy;
 pub mod thermostat_barostat;
 
 use std::collections::HashSet;

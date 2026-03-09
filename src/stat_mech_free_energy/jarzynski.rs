@@ -245,9 +245,14 @@ mod tests {
 
     #[test]
     fn parse_pull_file() {
-        let path = Path::new("../data/pull.1");
-        let samples = read_pull_file(path).expect("parse should succeed");
-        assert!(!samples.is_empty());
+        let mut path = std::env::temp_dir();
+        path.push("jarzynski_pull_test.dat");
+        std::fs::write(&path, "1 0.0 0.0 1.0 0.2\n2 0.1 0.0 1.1 0.3\n").expect("write test file");
+
+        let samples = read_pull_file(&path).expect("parse should succeed");
+        assert_eq!(samples.len(), 2);
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
