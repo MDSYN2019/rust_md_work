@@ -21,6 +21,26 @@ pub struct ScfResult {
 }
 
 impl ScfSystem {
+    fn sort_eigensystem(mut eig: SymmetricEigen<f64, nalgebra::Dyn>) -> SymmetricEigen<f64, nalgebra::Dyn> {
+        let n = eig.eigenvalues.len();
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|&a, &b| eig.eigenvalues[a].partial_cmp(&eig.eigenvalues[b]).unwrap());
+
+        let mut sorted_vals = eig.eigenvalues.clone();
+        let mut sorted_vecs = eig.eigenvectors.clone();
+
+        for (new_col, &old_col) in order.iter().enumerate() {
+            sorted_vals[new_col] = eig.eigenvalues[old_col];
+            for row in 0..n {
+                sorted_vecs[(row, new_col)] = eig.eigenvectors[(row, old_col)];
+            }
+        }
+
+        eig.eigenvalues = sorted_vals;
+        eig.eigenvectors = sorted_vecs;
+        eig
+    }
+
     pub fn new(
         overlap: DMatrix<f64>,
         core_hamiltonian: DMatrix<f64>,
@@ -118,7 +138,7 @@ impl ScfSystem {
         for iter in 1..=max_iter {
             let fock = self.build_fock(&density);
             let fock_ortho = x.transpose() * &fock * &x;
-            let eig = SymmetricEigen::new(fock_ortho);
+            let eig = Self::sort_eigensystem(SymmetricEigen::new(fock_ortho));
             let coeff = &x * eig.eigenvectors;
             let new_density = self.build_density(&coeff);
 
@@ -173,5 +193,27 @@ mod tests {
         assert!((result.electronic_energy + 1.3).abs() < 1e-10);
         assert!((result.total_energy + 1.3).abs() < 1e-10);
         assert!((result.orbital_energies[0] + 0.3).abs() < 1e-10);
+    }
+
+    #[test]
+    fn hartree_fock_two_basis_non_interacting_case() {
+        // Non-interacting closed-shell test: ERIs are all zero, so SCF should
+        // reduce to diagonalizing the core Hamiltonian in an orthonormal basis.
+        let overlap = DMatrix::from_row_slice(2, 2, &[1.0, 0.0, 0.0, 1.0]);
+        let core_h = DMatrix::from_row_slice(2, 2, &[-1.0, -0.2, -0.2, -0.5]);
+        let eri = vec![0.0; 16];
+
+        let hf = ScfSystem::new(overlap, core_h, eri, 2);
+        let result = hf.run_scf(0.0, 50, 1e-12, 1e-12);
+
+        assert!(result.converged);
+        assert!(result.iterations <= 3);
+
+        // Lowest eigenvalue of core_h is ~ -1.0701562118716426 for this matrix.
+        // With a closed shell (2 electrons), E_elec = 2 * e_occ.
+        let expected_electronic = -2.140312423743285;
+        assert!((result.electronic_energy - expected_electronic).abs() < 1e-10);
+        assert!((result.total_energy - expected_electronic).abs() < 1e-10);
+        assert!(result.orbital_energies[0] < result.orbital_energies[1]);
     }
 }
