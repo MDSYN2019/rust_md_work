@@ -76,6 +76,8 @@ pub mod cell;
 pub mod error;
 pub mod molecule;
 pub mod parameters;
+#[path = "quantum/quantum_chem.rs"]
+pub mod quantum_chemistry;
 #[cfg(feature = "python")]
 mod python;
 pub mod thermostat_barostat;
