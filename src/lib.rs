@@ -75,6 +75,8 @@ extern crate assert_type_eq;
 pub mod error;
 pub mod molecule;
 pub mod parameters;
+#[path = "quantum/quantum_chem.rs"]
+pub mod quantum_chemistry;
 #[cfg(feature = "python")]
 mod python;
 pub mod thermostat_barostat;
