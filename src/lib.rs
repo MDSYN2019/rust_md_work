@@ -1231,54 +1231,38 @@ pub mod lennard_jones_simulations {
         cutoff: f64,
     ) {
         let mut values: Vec<f32> = Vec::new();
-
-        // Create the subcells for the simulation box
-        let simulation_box = cell_subdivision::SimulationBox {
-            x_dimension: box_length,
-            y_dimension: box_length,
-            z_dimension: box_length,
-        };
-
-        // BOOKMARK
-        // new force vector
-        //let mut forces = vec![Vec3::zero(); particles.len()];
-
         let box_len = Vec3::new(box_length, box_length, box_length);
         let mut cl = CellList::new(box_len, cutoff); // TODO CELL
 
+        // Create the subcells - we need to have a initial force list for each cell
         cl.rebuild(&particles);
-
-        let mut count = 0usize;
-        cl.for_each_neighbor_pair(&particles, |i, j, dr, r2| {
-            count += 1;
-            // Insert your force calc here (LJ etc.)
-            println!(
-                "pair ({i},{j}) r2={r2:.4} dr=({:.3},{:.3},{:.3})",
-                dr.x, dr.y, dr.z
-            );
-            //compute_forces_particles_index(&particles, box_length, i as u64, j as u64);
-
-            let si = particles[i as usize].lj_parameters.sigma;
-            let ei = particles[i as usize].lj_parameters.epsilon;
-            let sj = particles[j as usize].lj_parameters.sigma;
-            let ej = particles[j as usize].lj_parameters.epsilon;
+        let mut initial_forces = vec![Vector3::<f64>::zeros(); particles.len()];
+        cl.for_each_neighbor_pair(particles, |i, j, dr, r2| {
+            let si = particles[i].lj_parameters.sigma;
+            let ei = particles[i].lj_parameters.epsilon;
+            let sj = particles[j].lj_parameters.sigma;
+            let ej = particles[j].lj_parameters.epsilon;
             let sigma = 0.5 * (si + sj);
             let epsilon = (ei * ej).sqrt();
 
             let f_vec = compute_pair_forces_vector(dr, r2, sigma, epsilon);
+            let fv = Vector3::new(f_vec.x, f_vec.y, f_vec.z);
+
+            initial_forces[i] -= fv;
+            initial_forces[j] += fv;
         });
 
-        // Create the subcells - here we have used a subdivision of 10 for the cells
-        let mut subcells = simulation_box.create_subcells(10);
-        // Store the coordinates in cells
-        simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10); // --- initial forces and energy ---
-
-        compute_forces_particles(particles, box_length, &mut subcells);
+        for (p, f) in particles.iter_mut().zip(initial_forces.into_iter()) {
+            p.force = f;
+        }
 
         let mut kinetic_energy = 0.0;
+
+        // accumulate kinetic energy
         for p in particles.iter() {
             kinetic_energy += 0.5 * p.mass * p.velocity.norm_squared();
         }
+
         let mut potential_energy = site_site_energy_calculation(particles, box_length);
         let mut total_energy = kinetic_energy + potential_energy;
 
@@ -1291,7 +1275,8 @@ pub mod lennard_jones_simulations {
 
         // --- time integration loop ---
         for _step in 0..number_of_steps {
-            // 1) position update (Verlet - half step)
+            // 1) position updatelet mut forces = vec![Vector3::zeros(); particles.len()];
+            let mut forces = vec![Vector3::<f64>::zeros(); particles.len()];
 
             let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(particles.len());
 
@@ -1314,10 +1299,41 @@ pub mod lennard_jones_simulations {
             // 3) PBC
             pbc_update(particles, box_length);
 
-            simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+            cl.rebuild(&particles);
+
+            let mut count = 0usize;
+
+            cl.for_each_neighbor_pair(&particles, |i, j, dr, r2| {
+                count += 1;
+                // Insert your force calc here (LJ etc.)
+                //println!(
+                //    "pair ({i},{j}) r2={r2:.4} dr=({:.3},{:.3},{:.3})",
+                //    dr.x, dr.y, dr.z
+                //);
+                //compute_forces_particles_index(&particles, box_length, i as u64, j as u64);
+
+                let si = particles[i as usize].lj_parameters.sigma;
+                let ei = particles[i as usize].lj_parameters.epsilon;
+                let sj = particles[j as usize].lj_parameters.sigma;
+                let ej = particles[j as usize].lj_parameters.epsilon;
+                let sigma = 0.5 * (si + sj);
+                let epsilon = (ei * ej).sqrt();
+
+                let f_vec = compute_pair_forces_vector(dr, r2, sigma, epsilon);
+                let fv = Vector3::new(f_vec.x, f_vec.y, f_vec.z);
+
+                forces[i] -= fv;
+                forces[j] += fv;
+            });
+
+            for (p, f) in particles.iter_mut().zip(forces.into_iter()) {
+                p.force = f;
+            }
+
+            //simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
 
             // 4) recompute forces (LJ)
-            compute_forces_particles(particles, box_length, &mut subcells);
+            //compute_forces_particles(particles, box_length, &mut subcells);
 
             // 5) velocity update (Verlet - second half step)
             for p in particles.iter_mut() {
@@ -1357,6 +1373,11 @@ pub mod lennard_jones_simulations {
 
             values.push(total_energy as f32);
         }
+
+        info!(
+            "Init particle energy | E_kin={kinetic_energy:.6} E_pot={potential_energy:.6} E_tot={total_energy:.6}"
+        );
+
         // Optional: your running-average helper
         compute_average_val(&mut values, 2, number_of_steps as u64);
     }
