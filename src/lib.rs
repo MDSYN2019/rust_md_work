@@ -734,7 +734,20 @@ pub mod lennard_jones_simulations {
         impropers: &[Improper],
         box_length: f64,
     ) -> f64 {
-        apply_all_bonded_forces_and_energy(atoms, bonds, angles, dihedrals, impropers, box_length)
+        // NOTE:
+        // `apply_all_bonded_forces_and_energy` updates forces as a side effect.
+        // During MD we call this helper for diagnostics only (energy reporting),
+        // so we must avoid mutating the active force buffers, otherwise bonded
+        // forces are effectively applied twice and the integrator can blow up.
+        let mut atoms_for_energy = atoms.clone();
+        apply_all_bonded_forces_and_energy(
+            &mut atoms_for_energy,
+            bonds,
+            angles,
+            dihedrals,
+            impropers,
+            box_length,
+        )
     }
 
     pub fn compute_intermolecular_forces_systems(systems: &mut [System], box_length: f64) -> f64 {
