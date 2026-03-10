@@ -72,6 +72,7 @@ extern crate assert_type_eq;
 // src/error.rs
 // src/molcule.rs
 // src/parameters.rs
+pub mod cell;
 pub mod error;
 pub mod molecule;
 pub mod parameters;
@@ -121,7 +122,7 @@ fn dedup_permutation(v: &mut Vec<Vec<i32>>) {
 }
 
 pub mod cell_subdivision {
-
+    use crate::cell::cell::CellList;
     use crate::lennard_jones_simulations::Particle;
     use crate::molecule::molecule::System;
     use nalgebra::Vector3;
@@ -184,19 +185,24 @@ pub mod cell_subdivision {
         pub half_length: Vector3<f64>,
         pub index: Vector3<usize>,
         pub atom_index: Vec<usize>,
+        pub head: Vec<Option<usize>>,
+        pub next: Vec<Option<usize>>,
     }
 
     impl SimulationBox {
         pub fn create_subcells(&self, n_cells: usize) -> Vec<MolecularCoordinates> {
-            let mut cells = Vec::with_capacity(n_cells * n_cells * n_cells);
+            let n_cells_per_dim = n_cells;
+            let n_cells_total = n_cells_per_dim * n_cells_per_dim * n_cells_per_dim;
+            let mut cells = Vec::with_capacity(n_cells_total); // create the cells
 
-            let dx = self.x_dimension / n_cells as f64;
-            let dy = self.y_dimension / n_cells as f64;
-            let dz = self.z_dimension / n_cells as f64;
+            let dx = self.x_dimension / n_cells_per_dim as f64;
+            let dy = self.y_dimension / n_cells_per_dim as f64;
+            let dz = self.z_dimension / n_cells_per_dim as f64;
 
-            for ix in 0..n_cells {
-                for iy in 0..n_cells {
-                    for iz in 0..n_cells {
+            for ix in 0..n_cells_per_dim {
+                for iy in 0..n_cells_per_dim {
+                    for iz in 0..n_cells_per_dim {
+                        // create the cells and push the coordinates (with the center implemented)
                         cells.push(MolecularCoordinates {
                             center: Vector3::new(
                                 (ix as f64 + 0.5) * dx,
@@ -206,6 +212,8 @@ pub mod cell_subdivision {
                             half_length: Vector3::new(dx * 0.5, dy * 0.5, dz * 0.5),
                             index: Vector3::new(ix, iy, iz),
                             atom_index: Vec::new(),
+                            head: vec![None; n_cells_total],
+                            next: Vec::new(), //
                         });
                     }
                 }
@@ -217,7 +225,7 @@ pub mod cell_subdivision {
         pub fn store_atoms_in_cells_particles(
             &self,
             particles: &mut Vec<Particle>,
-            cells: &mut Vec<MolecularCoordinates>,
+            cells: &mut Vec<MolecularCoordinates>, // the created cells
             n_cells: usize,
         ) -> () {
             /*
@@ -239,11 +247,6 @@ pub mod cell_subdivision {
 
                 let cid = cell_id(ix, iy, iz, n_cells);
                 cells[cid].atom_index.push(i);
-
-                // compute if the distance from the cell center is less than the distance between the cell center and the outward perimeter of the cell
-                //if distance_to(&particle.position, &cell.center) <= cell.length {
-                //    cell.atom_index.push(i as i64);
-                //}
             }
         }
 
@@ -278,6 +281,8 @@ pub mod cell_subdivision {
 pub mod lennard_jones_simulations {
 
     use super::*; //
+
+    use crate::cell::cell::{CellList, Vec3};
     use crate::parameters::lj_parameters::lennard_jones_potential;
     use crate::thermostat_barostat::andersen::andersen::apply_andersen_collisions;
     use crate::thermostat_barostat::nose_hoover::nose_hoover::apply_thermostat_nose_hoover_particles;
@@ -619,6 +624,17 @@ pub mod lennard_jones_simulations {
         particles[b.atom2].force -= f_vec;
 
         0.5 * b.k * dr * dr
+    }
+
+    pub fn compute_pair_forces_vector(dr: Vec3, r2: f64, sigma: f64, epsilon: f64) -> Vec3 {
+        if r2 == 0.0 {
+            return Vec3::zero();
+        }
+        let r = r2.sqrt();
+        // make sure the mixing rules are correct
+        let f_mag = lennard_jones_force_scalar(r, sigma, epsilon);
+        let f_vec = (dr / r) * f_mag; // along r-hat
+        f_vec
     }
 
     pub fn compute_forces_particles(
@@ -1214,27 +1230,41 @@ pub mod lennard_jones_simulations {
         dt: f64,
         box_length: f64,
         thermostat: &str,
+        cutoff: f64,
     ) {
         let mut values: Vec<f32> = Vec::new();
+        let box_len = Vec3::new(box_length, box_length, box_length);
+        let mut cl = CellList::new(box_len, cutoff); // TODO CELL
 
-        // Create the subcells for the simulation box
-        let simulation_box = cell_subdivision::SimulationBox {
-            x_dimension: box_length,
-            y_dimension: box_length,
-            z_dimension: box_length,
-        };
+        // Create the subcells - we need to have a initial force list for each cell
+        cl.rebuild(&particles);
+        let mut initial_forces = vec![Vector3::<f64>::zeros(); particles.len()];
+        cl.for_each_neighbor_pair(particles, |i, j, dr, r2| {
+            let si = particles[i].lj_parameters.sigma;
+            let ei = particles[i].lj_parameters.epsilon;
+            let sj = particles[j].lj_parameters.sigma;
+            let ej = particles[j].lj_parameters.epsilon;
+            let sigma = 0.5 * (si + sj);
+            let epsilon = (ei * ej).sqrt();
 
-        // Create the subcells - here we have used a subdivision of 10 for the cells
-        let mut subcells = simulation_box.create_subcells(10);
-        // Store the coordinates in cells
-        simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10); // --- initial forces and energy ---
+            let f_vec = compute_pair_forces_vector(dr, r2, sigma, epsilon);
+            let fv = Vector3::new(f_vec.x, f_vec.y, f_vec.z);
 
-        compute_forces_particles(particles, box_length, &mut subcells);
+            initial_forces[i] -= fv;
+            initial_forces[j] += fv;
+        });
+
+        for (p, f) in particles.iter_mut().zip(initial_forces.into_iter()) {
+            p.force = f;
+        }
 
         let mut kinetic_energy = 0.0;
+
+        // accumulate kinetic energy
         for p in particles.iter() {
             kinetic_energy += 0.5 * p.mass * p.velocity.norm_squared();
         }
+
         let mut potential_energy = site_site_energy_calculation(particles, box_length);
         let mut total_energy = kinetic_energy + potential_energy;
 
@@ -1247,7 +1277,8 @@ pub mod lennard_jones_simulations {
 
         // --- time integration loop ---
         for _step in 0..number_of_steps {
-            // 1) position update (Verlet - half step)
+            // 1) position updatelet mut forces = vec![Vector3::zeros(); particles.len()];
+            let mut forces = vec![Vector3::<f64>::zeros(); particles.len()];
 
             let mut a_old: Vec<Vector3<f64>> = Vec::with_capacity(particles.len());
 
@@ -1270,10 +1301,41 @@ pub mod lennard_jones_simulations {
             // 3) PBC
             pbc_update(particles, box_length);
 
-            simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
+            cl.rebuild(&particles);
+
+            let mut count = 0usize;
+
+            cl.for_each_neighbor_pair(&particles, |i, j, dr, r2| {
+                count += 1;
+                // Insert your force calc here (LJ etc.)
+                //println!(
+                //    "pair ({i},{j}) r2={r2:.4} dr=({:.3},{:.3},{:.3})",
+                //    dr.x, dr.y, dr.z
+                //);
+                //compute_forces_particles_index(&particles, box_length, i as u64, j as u64);
+
+                let si = particles[i as usize].lj_parameters.sigma;
+                let ei = particles[i as usize].lj_parameters.epsilon;
+                let sj = particles[j as usize].lj_parameters.sigma;
+                let ej = particles[j as usize].lj_parameters.epsilon;
+                let sigma = 0.5 * (si + sj);
+                let epsilon = (ei * ej).sqrt();
+
+                let f_vec = compute_pair_forces_vector(dr, r2, sigma, epsilon);
+                let fv = Vector3::new(f_vec.x, f_vec.y, f_vec.z);
+
+                forces[i] -= fv;
+                forces[j] += fv;
+            });
+
+            for (p, f) in particles.iter_mut().zip(forces.into_iter()) {
+                p.force = f;
+            }
+
+            //simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
 
             // 4) recompute forces (LJ)
-            compute_forces_particles(particles, box_length, &mut subcells);
+            //compute_forces_particles(particles, box_length, &mut subcells);
 
             // 5) velocity update (Verlet - second half step)
             for p in particles.iter_mut() {
@@ -1313,6 +1375,11 @@ pub mod lennard_jones_simulations {
 
             values.push(total_energy as f32);
         }
+
+        info!(
+            "Init particle energy | E_kin={kinetic_energy:.6} E_pot={potential_energy:.6} E_tot={total_energy:.6}"
+        );
+
         // Optional: your running-average helper
         compute_average_val(&mut values, 2, number_of_steps as u64);
     }
@@ -1740,6 +1807,7 @@ pub mod lennard_jones_simulations {
         dt: f64,
         box_length: f64,
         thermostat: &str,
+        cutoff: f64,
     ) {
         if thermostat == "monte_carlo" {
             match state {
@@ -1759,7 +1827,7 @@ pub mod lennard_jones_simulations {
                 if thermostat == "monte_carlo" {
                     return;
                 }
-                run_md_nve_particles(particles, number_of_steps, dt, box_length, thermostat);
+                run_md_nve_particles(particles, number_of_steps, dt, box_length, thermostat, 30.0);
             }
             InitOutput::Systems(systems) => {
                 run_md_nve_systems(systems, number_of_steps, dt, box_length, thermostat);
@@ -1853,7 +1921,14 @@ mod tests {
                     return; // Exit early or handle the error as needed
                 }
             };
-        lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 1000, 0.5, 10.0, "berendsen");
+        lennard_jones_simulations::run_md_nve(
+            &mut new_simulation_md,
+            1000,
+            0.5,
+            10.0,
+            "berendsen",
+            30.0,
+        );
 
         let dof = match &new_simulation_md {
             lennard_jones_simulations::InitOutput::Particles(particles) => 3 * particles.len(),

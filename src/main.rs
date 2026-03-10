@@ -75,44 +75,54 @@ fn main() {
         );
     }
 
+    // When we aren't using MPI distrbuted computing
+
     #[cfg(not(feature = "mpi"))]
     {
         // running either the default velocity-verlet simulation or monte-carlo simulation
-        lennard_jones_simulations::run_md_nve(&mut new_simulation_md, 30, 0.0005, 10.0, md_mode);
+        lennard_jones_simulations::run_md_nve(
+            &mut new_simulation_md,
+            30,
+            0.0005,
+            10.0,
+            md_mode,
+            30.0,
+        );
         if md_mode != "monte_carlo" {
             // running an andersen thermostat simulation after velocity-verlet demo
             lennard_jones_simulations::run_md_nve(
                 &mut new_simulation_md,
-                30,
+                3000,
                 0.0005,
                 10.0,
                 "andersen",
+                30.0,
             );
         }
     }
 
     // --------------------------------------------------------------------------------------//
     // Create a h2 system
-    let h2 = molecule::make_h2_system();
-    let mut systems_vec = molecule::create_systems(&h2, 210);
-    // assign positions and velocities to the positions
-
-    lennard_jones_simulations::set_molecular_positions_and_velocities(&mut systems_vec, 300.0);
-    // need to modify this - need to implement the create_atoms_with_set_positions_and_velocities to work with molecules here as well
-    #[cfg(feature = "mpi")]
-    {
-        lennard_jones_simulations::run_md_nve_mpi(
-            &mut systems_vec,
-            30,
-            0.0005,
-            10.0,
-            "none",
-            &world,
-        );
-    }
-
-    #[cfg(not(feature = "mpi"))]
-    {
-        lennard_jones_simulations::run_md_nve(&mut systems_vec, 30, 0.0005, 10.0, "none");
-    }
+    //  let h2 = molecule::make_h2_system();
+    //  let mut systems_vec = molecule::create_systems(&h2, 210);
+    //  // assign positions and velocities to the positions
+    //
+    //  lennard_jones_simulations::set_molecular_positions_and_velocities(&mut systems_vec, 300.0);
+    //  // need to modify this - need to implement the create_atoms_with_set_positions_and_velocities to work with molecules here as well
+    //  #[cfg(feature = "mpi")]
+    //  {
+    //      lennard_jones_simulations::run_md_nve_mpi(
+    //          &mut systems_vec,
+    //          30,
+    //          0.0005,
+    //          10.0,
+    //          "none",
+    //          &world,
+    //      );
+    //  }
+    //
+    //  #[cfg(not(feature = "mpi"))]
+    //  {
+    //      lennard_jones_simulations::run_md_nve(&mut systems_vec, 30, 0.0005, 10.0, "none", 3.0);
+    //  }
 }
