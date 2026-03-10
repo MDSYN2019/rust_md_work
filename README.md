@@ -38,6 +38,7 @@ Implements Lennard-Jones (LJ) interactions, bonded forces, velocity-Verlet time 
 - pbc wrapping  
 - Configurable time-step, LJ parameters, masses, and box sizes  
 - PDB and GRO coordinate readers (`molecule::io::{read_pdb, read_gro}`)  
+- Martini `.itp` force-field reader + converter (`molecule::martini::MartiniForceField`)  
 
 ---
 
@@ -69,3 +70,67 @@ The MPI code path is intended as a parallel-programming example (`run_md_nve_mpi
 make run
 make run-mpi NP=4
 ```
+
+## 🧪 Point-particle water-box style trajectory output (GRO + XTC)
+
+This repository now includes a runnable example binary that creates a simple Lennard-Jones point-particle fluid and writes outputs that can be opened in VMD:
+
+```bash
+cargo run --bin water_box
+```
+
+Generated files:
+- `water_box.gro` (final frame structure)
+- `water_box.xtc` (trajectory)
+
+### Open in VMD
+1. `vmd water_box.gro`
+2. In the VMD GUI: **File → Load Data Into Molecule...**
+3. Select `water_box.xtc` and load.
+
+> Notes:
+> - This is a coarse-grained, point-particle fluid setup (water-like in mass/density intent, not explicit 3-site/4-site water geometry).
+> - Coordinates are written in GRO/XTC-compatible units (nm in files).
+
+## 🐍 Python interface (buildable scaffold)
+
+A minimal Python extension interface is available behind the `python` feature.
+It exposes:
+
+- `PyMdEngine(sigma, epsilon)` class
+- `PyMdEngine.force_at_distance(r)`
+- `lj_force_scalar(r, sigma, epsilon)`
+- `python_api_version()`
+
+### Build with maturin
+
+```bash
+pip install maturin
+maturin develop --features python
+```
+
+Then in Python:
+
+```python
+import sang_md_py
+
+engine = sang_md_py.PyMdEngine(1.0, 1.0)
+print(engine.force_at_distance(1.2))
+print(sang_md_py.lj_force_scalar(1.2, 1.0, 1.0))
+```
+
+This is intended as a starting point you can expand with trajectory stepping, system builders, and observables.
+
+## 🧪 Martini coarse-grained water-box NVT example
+
+A dedicated Martini-style coarse-grained water box example is also available. It runs a single-bead solvent in an NVT-like setup using velocity-Verlet integration with a Berendsen thermostat and writes GRO/XTC outputs:
+
+```bash
+cargo run --bin martini_water_box
+```
+
+Generated files:
+- `martini_water_box.gro`
+- `martini_water_box.xtc`
+
+This is intended as a lightweight CG solvent demo that you can visualize in VMD with the same loading flow used for `water_box.xtc`.
