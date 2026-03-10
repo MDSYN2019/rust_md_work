@@ -624,9 +624,9 @@ pub mod lennard_jones_simulations {
         0.5 * b.k * dr * dr
     }
 
-    pub fn compute_forces_particles_index(dr: f64, r2: f64, sigma: f64, epsilon: f64) -> f64 {
+    pub fn compute_pair_forces_vector(dr: Vec3, r2: f64, sigma: f64, epsilon: f64) -> Vec3 {
         if r2 == 0.0 {
-            return 0.0;
+            return Vec3::zero();
         }
         let r = r2.sqrt();
         // make sure the mixing rules are correct
@@ -1265,7 +1265,7 @@ pub mod lennard_jones_simulations {
             let sigma = 0.5 * (si + sj);
             let epsilon = (ei * ej).sqrt();
 
-            let f_vec = compute_forces_particles_index(dr, r2, sigma, epsilon);
+            let f_vec = compute_pair_forces_vector(dr, r2, sigma, epsilon);
         });
 
         // Create the subcells - here we have used a subdivision of 10 for the cells
