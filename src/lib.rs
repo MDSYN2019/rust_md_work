@@ -76,10 +76,10 @@ pub mod cell;
 pub mod error;
 pub mod molecule;
 pub mod parameters;
-#[path = "quantum/quantum_chem.rs"]
-pub mod quantum_chemistry;
 #[cfg(feature = "python")]
 mod python;
+#[path = "quantum/quantum_chem.rs"]
+pub mod quantum_chemistry;
 pub mod thermostat_barostat;
 
 use std::collections::HashSet;
@@ -99,6 +99,30 @@ pub fn lennard_jones_force_scalar(r: f64, sigma: f64, epsilon: f64) -> f64 {
     let sr6 = sr2 * sr2 * sr2;
     let sr12 = sr6 * sr6;
     24.0 * epsilon * (2.0 * sr12 - sr6) / r
+}
+
+#[inline]
+fn coulomb_prefactor() -> f64 {
+    // Reduced-unit Coulomb prefactor.
+    // In SI units this would be 1/(4*pi*epsilon_0).
+    1.0
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct PmeConfig {
+    pub alpha: f64,
+    pub real_cutoff: f64,
+    pub kmax: i32,
+}
+
+impl Default for PmeConfig {
+    fn default() -> Self {
+        Self {
+            alpha: 0.35,
+            real_cutoff: 9.0,
+            kmax: 4,
+        }
+    }
 }
 
 #[inline]
@@ -1178,6 +1202,164 @@ pub mod lennard_jones_simulations {
         )
     }
 
+    fn erfc_approx(x: f64) -> f64 {
+        // Abramowitz and Stegun 7.1.26
+        let z = x.abs();
+        let t = 1.0 / (1.0 + 0.3275911 * z);
+        let a1 = 0.254829592;
+        let a2 = -0.284496736;
+        let a3 = 1.421413741;
+        let a4 = -1.453152027;
+        let a5 = 1.061405429;
+        let poly = (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t;
+        let erf = 1.0 - poly * (-z * z).exp();
+        let erf = if x < 0.0 { -erf } else { erf };
+        1.0 - erf
+    }
+
+    fn add_electrostatic_real_space_particles(
+        particles: &mut [Particle],
+        box_length: f64,
+        pme: &PmeConfig,
+    ) -> f64 {
+        let mut energy = 0.0;
+        let alpha = pme.alpha;
+        let rc = pme.real_cutoff;
+        let k_e = coulomb_prefactor();
+
+        for i in 0..particles.len() {
+            for j in (i + 1)..particles.len() {
+                let qi = particles[i].charge;
+                let qj = particles[j].charge;
+                if qi == 0.0 && qj == 0.0 {
+                    continue;
+                }
+
+                let rij = minimum_image_convention(
+                    particles[j].position - particles[i].position,
+                    box_length,
+                );
+                let r = rij.norm();
+                if r <= 1e-12 || r > rc {
+                    continue;
+                }
+
+                let ar = alpha * r;
+                let erfc_ar = erfc_approx(ar);
+                let exp_term = (-(ar * ar)).exp();
+                let qq = k_e * qi * qj;
+
+                energy += qq * erfc_ar / r;
+
+                let scalar = qq
+                    * (erfc_ar / (r * r)
+                        + (2.0 * alpha / std::f64::consts::PI.sqrt()) * exp_term / r);
+                let f_vec = -(rij / r) * scalar;
+                particles[i].force += f_vec;
+                particles[j].force -= f_vec;
+            }
+        }
+
+        energy
+    }
+
+    fn add_electrostatic_reciprocal_particles(
+        particles: &mut [Particle],
+        box_length: f64,
+        pme: &PmeConfig,
+    ) -> f64 {
+        if particles.is_empty() {
+            return 0.0;
+        }
+
+        let volume = box_length.powi(3);
+        let alpha = pme.alpha;
+        let kmax = pme.kmax;
+        let k_e = coulomb_prefactor();
+        let two_pi_over_l = 2.0 * std::f64::consts::PI / box_length;
+        let mut energy = 0.0;
+
+        for nx in -kmax..=kmax {
+            for ny in -kmax..=kmax {
+                for nz in -kmax..=kmax {
+                    if nx == 0 && ny == 0 && nz == 0 {
+                        continue;
+                    }
+
+                    let kvec = Vector3::new(
+                        nx as f64 * two_pi_over_l,
+                        ny as f64 * two_pi_over_l,
+                        nz as f64 * two_pi_over_l,
+                    );
+                    let k2 = kvec.norm_squared();
+                    if k2 <= 1e-12 {
+                        continue;
+                    }
+
+                    let damp = (-k2 / (4.0 * alpha * alpha)).exp();
+                    let coef = (2.0 * std::f64::consts::PI * k_e / volume) * damp / k2;
+
+                    let mut s_cos = 0.0;
+                    let mut s_sin = 0.0;
+                    for p in particles.iter() {
+                        let phase = kvec.dot(&p.position);
+                        s_cos += p.charge * phase.cos();
+                        s_sin += p.charge * phase.sin();
+                    }
+
+                    energy += coef * (s_cos * s_cos + s_sin * s_sin);
+
+                    for p in particles.iter_mut() {
+                        let phase = kvec.dot(&p.position);
+                        let sin_i = phase.sin();
+                        let cos_i = phase.cos();
+                        let force_coeff =
+                            -(4.0 * std::f64::consts::PI * k_e * p.charge / volume) * damp / k2;
+                        let proj = s_cos * sin_i - s_sin * cos_i;
+                        p.force += kvec * (force_coeff * proj);
+                    }
+                }
+            }
+        }
+
+        let self_energy: f64 = particles.iter().map(|p| p.charge * p.charge).sum::<f64>()
+            * (-k_e * alpha / std::f64::consts::PI.sqrt());
+
+        energy + self_energy
+    }
+
+    fn add_electrostatic_forces_particles(
+        particles: &mut [Particle],
+        box_length: f64,
+        pme: &PmeConfig,
+    ) -> f64 {
+        add_electrostatic_real_space_particles(particles, box_length, pme)
+            + add_electrostatic_reciprocal_particles(particles, box_length, pme)
+    }
+
+    fn add_electrostatic_forces_systems(
+        systems: &mut [System],
+        box_length: f64,
+        pme: &PmeConfig,
+    ) -> f64 {
+        let mut all_atoms: Vec<Particle> = systems
+            .iter()
+            .flat_map(|s| s.atoms.iter().cloned())
+            .collect();
+
+        let energy = add_electrostatic_forces_particles(&mut all_atoms, box_length, pme);
+
+        let mut idx = 0usize;
+        for sys in systems.iter_mut() {
+            for atom in sys.atoms.iter_mut() {
+                atom.force += all_atoms[idx].force;
+                idx += 1;
+            }
+        }
+
+        energy
+    }
+
     pub fn run_md_andersen_particles(
         particles: &mut Vec<Particle>,
         dt: f64,
@@ -1257,6 +1439,7 @@ pub mod lennard_jones_simulations {
         let mut values: Vec<f32> = Vec::new();
         let box_len = Vec3::new(box_length, box_length, box_length);
         let mut cl = CellList::new(box_len, cutoff); // TODO CELL
+        let pme = PmeConfig::default();
 
         // Create the subcells - we need to have a initial force list for each cell
         cl.rebuild(&particles);
@@ -1279,6 +1462,8 @@ pub mod lennard_jones_simulations {
         for (p, f) in particles.iter_mut().zip(initial_forces.into_iter()) {
             p.force = f;
         }
+        let electrostatic_init_energy =
+            add_electrostatic_forces_particles(particles, box_length, &pme);
 
         let mut kinetic_energy = 0.0;
 
@@ -1287,7 +1472,8 @@ pub mod lennard_jones_simulations {
             kinetic_energy += 0.5 * p.mass * p.velocity.norm_squared();
         }
 
-        let mut potential_energy = site_site_energy_calculation(particles, box_length);
+        let mut potential_energy =
+            site_site_energy_calculation(particles, box_length) + electrostatic_init_energy;
         let mut total_energy = kinetic_energy + potential_energy;
 
         info!(
@@ -1353,6 +1539,8 @@ pub mod lennard_jones_simulations {
             for (p, f) in particles.iter_mut().zip(forces.into_iter()) {
                 p.force = f;
             }
+            let electrostatic_energy =
+                add_electrostatic_forces_particles(particles, box_length, &pme);
 
             //simulation_box.store_atoms_in_cells_particles(particles, &mut subcells, 10);
 
@@ -1392,7 +1580,8 @@ pub mod lennard_jones_simulations {
             for p in particles.iter() {
                 kinetic_energy += 0.5 * p.mass * p.velocity.norm_squared();
             }
-            potential_energy = site_site_energy_calculation(particles, box_length);
+            potential_energy =
+                site_site_energy_calculation(particles, box_length) + electrostatic_energy;
             total_energy = kinetic_energy + potential_energy;
 
             values.push(total_energy as f32);
@@ -1708,6 +1897,7 @@ pub mod lennard_jones_simulations {
         let mut total_energy = 0.0;
         let mut kinetic_energy = 0.0;
         let mut potential_energy = 0.0;
+        let pme = PmeConfig::default();
 
         // Create the subcells for the simulation box
         let simulation_box = cell_subdivision::SimulationBox {
@@ -1739,6 +1929,7 @@ pub mod lennard_jones_simulations {
             );
         }
         compute_intermolecular_forces_systems(systems, box_length);
+        let _ = add_electrostatic_forces_systems(systems, box_length, &pme);
 
         // this is only used if we apply nose hoover
         let mut xi_nose_hoover = vec![0.0; systems.len()];
@@ -1776,6 +1967,7 @@ pub mod lennard_jones_simulations {
             }
 
             compute_intermolecular_forces_systems(systems, box_length);
+            let electrostatic_energy = add_electrostatic_forces_systems(systems, box_length, &pme);
 
             for (s, sys) in systems.iter_mut().enumerate() {
                 for a in sys.atoms.iter_mut() {
@@ -1814,6 +2006,7 @@ pub mod lennard_jones_simulations {
                 );
             }
             potential_energy += intermolecular_site_site_energy_systems(systems, box_length);
+            potential_energy += electrostatic_energy;
 
             total_energy = kinetic_energy + potential_energy;
             values.push(total_energy as f32);
