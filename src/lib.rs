@@ -443,9 +443,18 @@ pub mod lennard_jones_simulations {
             }
             InitOutput::Systems(systems) => {
                 for sys in systems.iter_mut() {
+                    // Randomize each molecule position as a rigid translation so cloned
+                    // systems do not remain perfectly overlapped at initialization.
+                    let translation = Vector3::new(
+                        rng.random_range(0.0..10.0),
+                        rng.random_range(0.0..10.0),
+                        rng.random_range(0.0..10.0),
+                    );
+
                     // Each element is a System
                     // loop over each atom
                     for atom in sys.atoms.iter_mut() {
+                        atom.position += translation;
                         let sigma_mb = (temp / atom.mass).sqrt(); // 1.0 needs to be replaced with mass
                         let normal = Normal::new(0.0, sigma_mb).unwrap();
 
