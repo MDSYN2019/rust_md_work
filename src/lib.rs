@@ -307,11 +307,10 @@ pub mod lennard_jones_simulations {
     use super::*; //
 
     use crate::cell::cell::{CellList, Vec3};
+    use crate::error::error::compute_average_val;
     use crate::parameters::lj_parameters::lennard_jones_potential;
     use crate::thermostat_barostat::andersen::andersen::apply_andersen_collisions;
     use crate::thermostat_barostat::nose_hoover::nose_hoover::apply_thermostat_nose_hoover_particles;
-
-    use error::compute_average_val;
 
     use log::{debug, info};
     #[cfg(feature = "mpi")]
