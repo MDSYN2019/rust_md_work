@@ -412,8 +412,41 @@ pub fn create_systems(system: &System, number_of_molecules: i32) -> InitOutput {
      */
     let mut molecules: Vec<System> = Vec::new();
 
-    for _ in 0..number_of_molecules {
-        molecules.push(system.clone());
+    if number_of_molecules <= 0 {
+        return InitOutput::Systems(molecules);
+    }
+
+    // Build a simple cubic placement to avoid placing every molecule at the
+    // exact same coordinates (which causes extreme LJ overlaps/energies).
+    let mut min = Vector3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
+    let mut max = Vector3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for atom in &system.atoms {
+        min.x = min.x.min(atom.position.x);
+        min.y = min.y.min(atom.position.y);
+        min.z = min.z.min(atom.position.z);
+        max.x = max.x.max(atom.position.x);
+        max.y = max.y.max(atom.position.y);
+        max.z = max.z.max(atom.position.z);
+    }
+
+    let span = max - min;
+    let base_spacing = span.x.max(span.y).max(span.z);
+    let spacing = (base_spacing + 2.5).max(3.0);
+    let n_side = (number_of_molecules as f64).cbrt().ceil() as i32;
+
+    for m in 0..number_of_molecules {
+        let ix = m % n_side;
+        let iy = (m / n_side) % n_side;
+        let iz = m / (n_side * n_side);
+
+        let mut sys_clone = system.clone();
+        let shift = Vector3::new(ix as f64 * spacing, iy as f64 * spacing, iz as f64 * spacing);
+
+        for atom in &mut sys_clone.atoms {
+            atom.position += shift;
+        }
+
+        molecules.push(sys_clone);
     }
 
     // output as the enum we want which will be a valid input to run_md_nve
@@ -437,6 +470,32 @@ mod tests {
             charge: -3.0,
         };
         assert_eq!(test_atom.id, 1);
+    }
+
+    #[test]
+    fn test_create_systems_offsets_molecules() {
+        let h2 = make_h2_system();
+        let created = create_systems(&h2, 8);
+
+        let systems = match created {
+            InitOutput::Systems(systems) => systems,
+            InitOutput::Particles(_) => panic!("expected systems output"),
+        };
+
+        assert_eq!(systems.len(), 8);
+
+        let first = systems[0].atoms[0].position;
+        let mut distinct_positions = 0;
+        for sys in systems.iter().skip(1) {
+            if (sys.atoms[0].position - first).norm() > 1e-12 {
+                distinct_positions += 1;
+            }
+        }
+
+        assert!(
+            distinct_positions > 0,
+            "cloned molecules should not all occupy the same coordinates"
+        );
     }
 
     #[test]
