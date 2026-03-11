@@ -361,7 +361,7 @@ pub fn make_h2_system() -> System {
             force: Vector3::zeros(),
             atom_type: 0.0,
             mass: 1.0,
-            charge: 0.0,
+            charge: 0.1,
             energy: 0.0,
             lj_parameters: (LJParameters {
                 epsilon: 1.0,
@@ -376,7 +376,7 @@ pub fn make_h2_system() -> System {
             force: Vector3::zeros(),
             atom_type: 0.0,
             mass: 1.0,
-            charge: 0.0,
+            charge: -0.1,
             energy: 0.0,
             lj_parameters: (LJParameters {
                 epsilon: 1.0,
@@ -440,7 +440,11 @@ pub fn create_systems(system: &System, number_of_molecules: i32) -> InitOutput {
         let iz = m / (n_side * n_side);
 
         let mut sys_clone = system.clone();
-        let shift = Vector3::new(ix as f64 * spacing, iy as f64 * spacing, iz as f64 * spacing);
+        let shift = Vector3::new(
+            ix as f64 * spacing,
+            iy as f64 * spacing,
+            iz as f64 * spacing,
+        );
 
         for atom in &mut sys_clone.atoms {
             atom.position += shift;
