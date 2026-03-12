@@ -1,14 +1,15 @@
 
-# FerrumMD
-![CI](https://github.com/MDSYN2019/rust_md_work/actions/workflows/ci.yml/badge.svg)
-
 ![image info](FerrumMD.png)
 
 
-A high-performance **Molecular Dynamics (MD) engine written in Rust**.  
+A high-performance **Molecular Dynamics (MD) engine written in Rust**.
+
 Implements Lennard-Jones (LJ) interactions, bonded forces, velocity-Verlet time integration, periodic boundary conditions, thermostats, and molecular systems such as H₂.
 
 ---
+
+# FerrumMD
+![CI](https://github.com/MDSYN2019/rust_md_work/actions/workflows/ci.yml/badge.svg)
 
 ## 🔥 Features
 
