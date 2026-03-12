@@ -1,3 +1,5 @@
+name: release-please
+
 on:
   push:
     branches:
@@ -7,18 +9,20 @@ permissions:
   contents: write
   pull-requests: write
 
-name: release-please
-
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - name: Run Release Please
+        uses: googleapis/release-please-action@v4
         with:
-          # this assumes that you have created a personal access token
-          # (PAT) and configured it as a GitHub action secret named
-          # `MY_RELEASE_PLEASE_TOKEN` (this secret name is not important).
-          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
-          # this is a built-in strategy in release-please, see "Action Inputs"
-          # for more options
-          release-type: simple
+          # Uses merged PR titles/commits (Conventional Commits) on main
+          # to continuously maintain a release PR.
+          release-type: rust
+
+          # Use the default GitHub token in Actions; no PAT required.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Create GitHub releases as drafts so maintainers can review and
+          # manually publish when ready.
+          draft: true
