@@ -1,5 +1,5 @@
 
-# rust_md_work  
+# FerrumMD
 ![CI](https://github.com/MDSYN2019/rust_md_work/actions/workflows/ci.yml/badge.svg)
 
 A high-performance **Molecular Dynamics (MD) engine written in Rust**.  
